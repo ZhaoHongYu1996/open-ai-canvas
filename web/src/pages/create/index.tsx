@@ -155,7 +155,7 @@ export default function CreatePage() {
     useEffect(() => {
         if (mode !== "video") return;
         const normalized = normalizeVideoValue(videoProfile, { seconds, ratio, resolution: `${videoQuality}p` });
-        setSeconds(normalized.seconds);
+        setSeconds(clampCreationVideoSeconds(videoProfile, normalized.seconds));
         setRatio(normalized.ratio);
         setVideoQuality(normalized.resolution.replace(/p$/i, ""));
     }, [mode, selectedModel, videoProfile]);
@@ -333,11 +333,12 @@ export default function CreatePage() {
             toast.warning(`请先在设置中配置${modeLabels[mode]}模型`);
             return;
         }
-        if (mode === "video" && !videoDurationAllowed(videoProfile, Number(seconds))) {
+        const videoSeconds = mode === "video" ? clampCreationVideoSeconds(videoProfile, seconds) : seconds;
+        if (mode === "video" && !videoDurationAllowed(videoProfile, Number(videoSeconds))) {
             toast.error("当前模型不支持所选视频时长，请重新选择");
             return;
         }
-        const settings = { ratio, seconds, quality, videoQuality, count };
+        const settings = { ratio, seconds: videoSeconds, quality, videoQuality, count };
         const references = selectedCreationReferences(text, mentionReferences);
         // 后端对图片和视频使用不同的参考字段；这里先拆分，避免媒体类型在写入任务时被误判。
         const referenceImages = attachments.filter(isImageAttachment);
@@ -367,7 +368,7 @@ export default function CreatePage() {
         setBusy(true);
         const controller = new AbortController();
         abortRef.current = controller;
-        const requestConfig = { ...config, model: selectedModel, imageModel: selectedModel, videoModel: selectedModel, textModel: selectedModel, size: ratio, videoSeconds: seconds, quality, vquality: videoQuality, count };
+        const requestConfig = { ...config, model: selectedModel, imageModel: selectedModel, videoModel: selectedModel, textModel: selectedModel, size: ratio, videoSeconds, quality, vquality: videoQuality, count };
         try {
             if (mode === "text") {
                 const history = [...(activeConversation.messages || []), userMessage].map((item) => ({
@@ -839,13 +840,28 @@ function SettingSection({ title, value, children }: { title: string; value?: str
     return <section className="creation-parameter-section"><header><h3>{title}</h3>{value ? <span>{value}</span> : null}</header>{children}</section>;
 }
 
+const CREATION_VIDEO_DURATION_MIN = 4;
+const CREATION_VIDEO_DURATION_MAX = 15;
+
+function clampCreationVideoSeconds(profile: VideoCapabilityConfig, seconds: string) {
+    const normalized = Number(normalizeVideoValue(profile, { seconds }).seconds);
+    if (profile.duration.selection === "enum") {
+        const presets = videoDurationOptions(profile).filter((item) => item >= CREATION_VIDEO_DURATION_MIN && item <= CREATION_VIDEO_DURATION_MAX);
+        const values = presets.length ? presets : videoDurationOptions(profile);
+        return String(values.reduce((nearest, option) => Math.abs(option - normalized) < Math.abs(nearest - normalized) ? option : nearest, values[0]));
+    }
+    const min = Math.max(CREATION_VIDEO_DURATION_MIN, profile.duration.min || CREATION_VIDEO_DURATION_MIN);
+    const max = Math.min(CREATION_VIDEO_DURATION_MAX, Math.max(min, profile.duration.max || CREATION_VIDEO_DURATION_MAX));
+    return String(Math.min(max, Math.max(min, normalized)));
+}
+
 function DurationMenu({ profile, seconds, onChange }: { profile: VideoCapabilityConfig; seconds: string; onChange: (value: string) => void }) {
     const [open, setOpen] = useState(false);
-    const value = Number(normalizeVideoValue(profile, { seconds }).seconds);
-    const presets = profile.duration.selection === "enum" ? videoDurationOptions(profile) : [];
-    const fallbackPreset = presets.length ? presets : [profile.duration.default];
-    const min = profile.duration.selection === "range" ? profile.duration.min || 1 : Math.min(...fallbackPreset);
-    const max = profile.duration.selection === "range" ? Math.max(min, profile.duration.max || min) : Math.max(...fallbackPreset);
+    const value = Number(clampCreationVideoSeconds(profile, seconds));
+    const presets = profile.duration.selection === "enum" ? videoDurationOptions(profile).filter((item) => item >= CREATION_VIDEO_DURATION_MIN && item <= CREATION_VIDEO_DURATION_MAX) : [];
+    const fallbackPreset = presets.length ? presets : [Math.min(CREATION_VIDEO_DURATION_MAX, Math.max(CREATION_VIDEO_DURATION_MIN, profile.duration.default))];
+    const min = profile.duration.selection === "range" ? Math.max(CREATION_VIDEO_DURATION_MIN, profile.duration.min || CREATION_VIDEO_DURATION_MIN) : Math.min(...fallbackPreset);
+    const max = profile.duration.selection === "range" ? Math.min(CREATION_VIDEO_DURATION_MAX, Math.max(min, profile.duration.max || CREATION_VIDEO_DURATION_MAX)) : Math.max(...fallbackPreset);
     const step = Math.max(1, profile.duration.step || 1);
     const durationControl = profile.duration.selection === "range" ? <>
         <input className="h-8 w-full" style={{ accentColor: "var(--creation-text)" }} type="range" min={min} max={max} step={step} value={value} aria-label="视频时长（秒）" onChange={(event) => onChange(event.target.value)} />

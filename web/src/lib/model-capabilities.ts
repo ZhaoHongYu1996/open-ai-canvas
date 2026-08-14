@@ -135,7 +135,7 @@ export function defaultModelCapabilityConfig(protocol?: ModelProtocol, model = "
             maxAudioBytes: 0,
             maxAudioDurationSeconds: 0,
         },
-        duration: { selection: "range", min: 1, max: 15, step: 1, default: 6 },
+        duration: { selection: "range", min: 4, max: 15, step: 1, default: 6 },
         ratios: ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"],
         defaultRatio: "16:9",
         resolutions: ["480p", "720p", "1080p", "2160p"],
@@ -158,7 +158,7 @@ export function defaultModelCapabilityConfig(protocol?: ModelProtocol, model = "
         video.references.maxAudioBytes = 15 * 1024 * 1024;
         video.references.maxVideoDurationSeconds = 15;
         video.references.maxAudioDurationSeconds = 15;
-        video.duration = { selection: "range", min: 1, max: 15, step: 1, default: 5 };
+        video.duration = { selection: "range", min: 4, max: 15, step: 1, default: 5 };
         video.defaultRatio = "16:9";
         video.resolutions = ["720p", "1080p"];
         video.defaultResolution = "720p";
