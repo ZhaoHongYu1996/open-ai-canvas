@@ -2,8 +2,8 @@
 
 set -Eeuo pipefail
 
-REPOSITORY_URL="${REPOSITORY_URL:-https://github.com/ddcat-ai/open-ai-canvas.git}"
-REPOSITORY_REF="${REPOSITORY_REF:-main}"
+REPOSITORY_URL="${REPOSITORY_URL:-https://github.com/ZhaoHongYu1996/open-ai-canvas.git}"
+REPOSITORY_REF="${REPOSITORY_REF:-Dev}"
 INSTALL_DIR="${INSTALL_DIR:-/opt/open-ai-canvas}"
 CANVAS_HTTP_PORT="${CANVAS_HTTP_PORT:-3000}"
 COMPOSE_FILE="docker-compose.deploy.yml"
@@ -68,6 +68,9 @@ sync_source() {
     if [[ -d "$INSTALL_DIR/.git" ]]; then
         cd "$INSTALL_DIR"
         [[ -z "$(git status --porcelain --untracked-files=no)" ]] || fail "$INSTALL_DIR 存在本地代码改动，请先处理后再更新"
+        git remote set-url origin "$REPOSITORY_URL"
+        git fetch origin "$REPOSITORY_REF"
+        git checkout -B "$REPOSITORY_REF" "origin/$REPOSITORY_REF"
         git pull --ff-only origin "$REPOSITORY_REF"
         return
     fi

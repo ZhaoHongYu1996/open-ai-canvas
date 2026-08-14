@@ -150,6 +150,20 @@ export function defaultModelCapabilityConfig(protocol?: ModelProtocol, model = "
         video.duration = { selection: "enum", values: [4, 6, 8], default: 6 };
         video.resolutions = ["720p", "1080p"];
     }
+    if (protocol === "opAIBxinle") {
+        video.references.maxImages = 9;
+        video.references.maxVideos = 3;
+        video.references.maxAudios = 3;
+        video.references.maxVideoBytes = 200 * 1024 * 1024;
+        video.references.maxAudioBytes = 15 * 1024 * 1024;
+        video.references.maxVideoDurationSeconds = 15;
+        video.references.maxAudioDurationSeconds = 15;
+        video.duration = { selection: "range", min: 1, max: 15, step: 1, default: 5 };
+        video.defaultRatio = "16:9";
+        video.resolutions = ["720p", "1080p"];
+        video.defaultResolution = "720p";
+        video.generateAudio = { supported: true, default: true };
+    }
     if (protocol === "volcengine-ark-video" || protocol === "newapi-channel-1" || protocol === "newapi-channel-2") {
         video.references.maxVideos = 3;
         video.references.maxAudios = 3;

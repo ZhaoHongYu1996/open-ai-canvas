@@ -2,12 +2,12 @@
 
 set -Eeuo pipefail
 
-REPOSITORY_REF="${REPOSITORY_REF:-main}"
+REPOSITORY_REF="${REPOSITORY_REF:-Dev}"
 INSTALL_DIR="${INSTALL_DIR:-/opt/open-ai-canvas}"
 CANVAS_HTTP_PORT="${CANVAS_HTTP_PORT:-3000}"
 CANVAS_IMAGE_TAG="${CANVAS_IMAGE_TAG:-latest}"
 COMPOSE_FILE="docker-compose.deploy.yml"
-COMPOSE_URL="${COMPOSE_URL:-https://raw.githubusercontent.com/ddcat-ai/open-ai-canvas/${REPOSITORY_REF}/${COMPOSE_FILE}}"
+COMPOSE_URL="${COMPOSE_URL:-https://raw.githubusercontent.com/ZhaoHongYu1996/open-ai-canvas/${REPOSITORY_REF}/${COMPOSE_FILE}}"
 
 step() {
     printf '\n==> %s\n' "$1"

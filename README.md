@@ -7,7 +7,7 @@
 <p align="center">让一个故事，从文字走向银幕</p>
 
 <p align="center">
-  <a href="https://github.com/ddcat-ai/open-ai-canvas"><img src="https://img.shields.io/github/stars/ddcat-ai/open-ai-canvas?style=flat-square&logo=github" alt="GitHub stars"></a>
+  <a href="https://github.com/ZhaoHongYu1996/open-ai-canvas"><img src="https://img.shields.io/github/stars/ZhaoHongYu1996/open-ai-canvas?style=flat-square&logo=github" alt="GitHub stars"></a>
   <a href="VERSION"><img src="https://img.shields.io/badge/version-v1.0.43-2563eb?style=flat-square" alt="Version"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-f97316?style=flat-square" alt="License"></a>
 </p>
@@ -24,7 +24,7 @@
 - 测试账号：`test`
 - 测试密码：`test123456`
 - 测试环境：[https://ai.ddcat.pro/login](https://ai.ddcat.pro/login)
-- 代码仓库：[ddcat-ai/open-ai-canvas](https://github.com/ddcat-ai/open-ai-canvas)
+- 代码仓库：[ZhaoHongYu1996/open-ai-canvas](https://github.com/ZhaoHongYu1996/open-ai-canvas)（默认 `Dev` 分支）
 
 ## 赞助商
 
@@ -91,10 +91,10 @@ Issue 反馈、技术讨论和产品升级建议都可以在 QQ 群中沟通。�
 适用于刚买的 Linux 云服务器。准备一台 Ubuntu、Debian、CentOS 或 Rocky Linux 服务器，在云厂商防火墙（安全组）中先仅对自己的公网 IP 放行 TCP `3000` 端口，然后登录服务器执行这一条命令：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ddcat-ai/open-ai-canvas/main/scripts/install-server.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/ZhaoHongYu1996/open-ai-canvas/Dev/scripts/install-server.sh | sudo bash
 ```
 
-脚本会自动安装 Docker 和 Docker Compose，把项目源码安装到 `/opt/open-ai-canvas`，生成随机数据库密码，在服务器本地构建网页与后端镜像，并启动网页、后端、PostgreSQL 和 Redis。该流程不依赖 GitHub Container Registry（GHCR）的匿名拉取权限；数据库和上传文件使用 Docker 数据卷持久保存，重新启动容器不会丢失。
+脚本会从 [ZhaoHongYu1996/open-ai-canvas](https://github.com/ZhaoHongYu1996/open-ai-canvas) 的 `Dev` 分支拉取源码，自动安装 Docker 和 Docker Compose，把项目安装到 `/opt/open-ai-canvas`，生成随机数据库密码，在服务器本地构建网页与后端镜像，并启动网页、后端、PostgreSQL 和 Redis。该流程不依赖 GitHub Container Registry（GHCR）的匿名拉取权限；数据库和上传文件使用 Docker 数据卷持久保存，重新启动容器不会丢失。
 
 完成后打开 `http://服务器IP:3000`。第一个注册的账号会自动成为管理员；登录后在系统设置中配置模型渠道即可开始使用。公开注册默认关闭，但不影响第一个管理员注册。
 
@@ -106,14 +106,14 @@ sudo docker compose --env-file .env -f docker-compose.deploy.yml -f docker-compo
 sudo docker compose --env-file .env -f docker-compose.deploy.yml -f docker-compose.build.yml logs -f --tail=200
 ```
 
-首次部署需要下载构建依赖并编译前后端，耗时和资源占用会高于直接拉取镜像；后续更新会复用 Docker 构建缓存。需要固定代码版本时，可通过 `REPOSITORY_REF` 指定分支或标签。
+首次部署需要下载构建依赖并编译前后端，耗时和资源占用会高于直接拉取镜像；后续更新会复用 Docker 构建缓存。默认分支是 `Dev`；需要固定代码版本时，可通过 `REPOSITORY_REF` 指定其他分支或标签。
 
 ### 直接使用 GitHub Packages 镜像
 
 如果服务器不需要源码目录，可以使用只拉取 GitHub Container Registry（GHCR）镜像的快速脚本。脚本会下载部署 Compose 文件，不会 clone Git 仓库；首次执行仍会自动安装 Docker、生成 `/opt/open-ai-canvas/.env` 并启动全部服务：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ddcat-ai/open-ai-canvas/main/scripts/install-server-image.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/ZhaoHongYu1996/open-ai-canvas/Dev/scripts/install-server-image.sh | sudo bash
 ```
 
 该快速脚本仍依赖 GHCR 容器包的可见性。容器包尚未公开时，必须先执行 `docker login ghcr.io`，或在直接运行脚本时提供 `GHCR_USERNAME` 和 `GHCR_TOKEN` 环境变量完成登录；未配置凭据时请使用上方推荐的源码构建脚本。默认使用 `latest` 标签，固定版本或修改端口可在首次执行后编辑 `/opt/open-ai-canvas/.env`，然后重新执行脚本。
@@ -201,7 +201,7 @@ curl -N --http1.1 \
 需要 Bun、Go 和可用的 OpenAI 兼容模型渠道。
 
 ```bash
-git clone https://github.com/ddcat-ai/open-ai-canvas.git
+git clone -b Dev https://github.com/ZhaoHongYu1996/open-ai-canvas.git
 cd open-ai-canvas
 ```
 

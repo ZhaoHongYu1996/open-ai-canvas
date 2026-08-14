@@ -73,6 +73,7 @@ const (
 	ChannelInterfaceVolcengineArkVideo    ChannelInterfaceType = "volcengine-ark-video"
 	ChannelInterfaceVolcengineJiMengVideo ChannelInterfaceType = "volcengine-jimeng-video"
 	ChannelInterfaceGeminiVeo             ChannelInterfaceType = "gemini-veo"
+	ChannelInterfaceOpAIBxinle            ChannelInterfaceType = "opAIBxinle"
 
 	ApiCallStatusSucceeded ApiCallStatus = "succeeded"
 	ApiCallStatusFailed    ApiCallStatus = "failed"
