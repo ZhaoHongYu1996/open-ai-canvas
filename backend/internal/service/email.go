@@ -28,14 +28,53 @@ const registrationEmailPurpose = "registration"
 const registrationCodeTTL = 10 * time.Minute
 
 type EmailSettingRequest struct {
-	Enabled    bool   `json:"enabled"`
-	Host       string `json:"host"`
-	Port       int    `json:"port"`
-	Username   string `json:"username"`
-	Password   string `json:"password"`
-	Encryption string `json:"encryption"`
-	FromEmail  string `json:"fromEmail"`
-	FromName   string `json:"fromName"`
+	Enabled    bool          `json:"enabled"`
+	Host       string        `json:"host"`
+	Port       emailSMTPPort `json:"port"`
+	Username   string        `json:"username"`
+	Password   string        `json:"password"`
+	Encryption string        `json:"encryption"`
+	FromEmail  string        `json:"fromEmail"`
+	FromName   string        `json:"fromName"`
+}
+
+// 浏览器 number 输入常把端口提交成字符串，保存时同时接受整数和数字字符串。
+type emailSMTPPort int
+
+func (p *emailSMTPPort) UnmarshalJSON(data []byte) error {
+	n, err := parseEmailSMTPPort(data)
+	if err != nil {
+		return err
+	}
+	*p = emailSMTPPort(n)
+	return nil
+}
+
+func parseEmailSMTPPort(data []byte) (int, error) {
+	trimmed := strings.TrimSpace(string(data))
+	if trimmed == "" || trimmed == "null" {
+		return 0, nil
+	}
+	if strings.HasPrefix(trimmed, `"`) {
+		var raw string
+		if err := json.Unmarshal([]byte(trimmed), &raw); err != nil {
+			return 0, errors.New("SMTP 端口必须是整数")
+		}
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
+			return 0, nil
+		}
+		n, err := strconv.Atoi(raw)
+		if err != nil {
+			return 0, errors.New("SMTP 端口必须是整数")
+		}
+		return n, nil
+	}
+	var n int
+	if err := json.Unmarshal([]byte(trimmed), &n); err != nil {
+		return 0, errors.New("SMTP 端口必须是整数")
+	}
+	return n, nil
 }
 
 type PublicEmailSetting struct {
@@ -82,7 +121,7 @@ func (s *Service) UpdateEmailSetting(actor *model.User, req EmailSettingRequest)
 	if err != nil {
 		return nil, err
 	}
-	next := normalizeEmailSetting(emailSettingValue{Enabled: req.Enabled, Host: req.Host, Port: req.Port, Username: req.Username, Password: req.Password, Encryption: req.Encryption, FromEmail: req.FromEmail, FromName: req.FromName})
+	next := normalizeEmailSetting(emailSettingValue{Enabled: req.Enabled, Host: req.Host, Port: int(req.Port), Username: req.Username, Password: req.Password, Encryption: req.Encryption, FromEmail: req.FromEmail, FromName: req.FromName})
 	if next.Password == "" {
 		next.Password = current.Password
 	}
