@@ -335,9 +335,18 @@ func (s *Service) UpdateUser(actor *model.User, userID string, req UpdateUserReq
 		user.PasswordHash = hash
 		_ = s.repo.DeleteUserAuthSessions(user.ID)
 	}
+	disableNow := user.Status == model.UserStatusActive && nextStatus == model.UserStatusDisabled
 	user.Role = nextRole
 	user.Status = nextStatus
 	user.UpdatedAt = time.Now()
+	if disableNow {
+		if err := s.repo.DeleteUserAuthSessions(user.ID); err != nil {
+			return nil, err
+		}
+		if err := s.repo.DeleteUserTaskTextDeltas(user.ID); err != nil {
+			return nil, err
+		}
+	}
 	if err := s.repo.Save(user); err != nil {
 		return nil, err
 	}
@@ -350,6 +359,10 @@ func (s *Service) UpdateUser(actor *model.User, userID string, req UpdateUserReq
 func (s *Service) DeleteUser(actor *model.User, userID string) error {
 	if err := s.RequireAdmin(actor); err != nil {
 		return err
+	}
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return BadAuthRequest("用户 ID 无效")
 	}
 	if actor.ID == userID {
 		return BadAuthRequest("不能删除当前登录的管理员账号")
@@ -367,19 +380,10 @@ func (s *Service) DeleteUser(actor *model.User, userID string) error {
 			return BadAuthRequest("至少需要保留一个管理员")
 		}
 	}
-	if err := s.repo.DeleteUserAuthSessions(user.ID); err != nil {
+	if err := s.repo.DeleteUserAccount(user.ID); err != nil {
 		return err
 	}
-	if err := s.repo.DeleteUserTaskTextDeltas(user.ID); err != nil {
-		return err
-	}
-	// 有资金流水后必须保留用户主体，删除入口改为停用并清除全部登录态。
-	user.Status = model.UserStatusDisabled
-	user.UpdatedAt = time.Now()
-	if err := s.repo.Save(user); err != nil {
-		return err
-	}
-	return s.appendAdminAudit(actor, "user.disable", "user", user.ID, "停用用户并清除登录态", nil)
+	return s.appendAdminAudit(actor, "user.delete", "user", user.ID, "删除用户账号及业务数据", map[string]any{"username": user.Username, "role": user.Role})
 }
 
 func (s *Service) BulkDisableUsers(actor *model.User, req BulkDisableUsersRequest) (*BulkDisableUsersResult, error) {
@@ -734,7 +738,7 @@ func mergeChannelRequest(req ChannelRequest, channel model.ModelChannel) Channel
 
 func validChannelInterfaceType(value model.ChannelInterfaceType) bool {
 	switch value {
-	case model.ChannelInterfaceChatCompletion, model.ChannelInterfaceOpenAIResponse, model.ChannelInterfaceOpenAIImage, model.ChannelInterfaceGrokImage, model.ChannelInterfaceVolcengineArkImage, model.ChannelInterfaceVolcengineJiMengImage, model.ChannelInterfaceOpenAIAudio, model.ChannelInterfaceAsyncAudio, model.ChannelInterfaceNewAPIVideo, model.ChannelInterfaceNewAPIChannel1, model.ChannelInterfaceNewAPIChannel2, model.ChannelInterfaceXAIVideo, model.ChannelInterfaceVolcengineArkVideo, model.ChannelInterfaceVolcengineJiMengVideo, model.ChannelInterfaceGeminiVeo, model.ChannelInterfaceOpAIBxinle:
+	case model.ChannelInterfaceChatCompletion, model.ChannelInterfaceOpenAIResponse, model.ChannelInterfaceOpenAIImage, model.ChannelInterfaceGrokImage, model.ChannelInterfaceVolcengineArkImage, model.ChannelInterfaceVolcengineJiMengImage, model.ChannelInterfaceOpenAIAudio, model.ChannelInterfaceAsyncAudio, model.ChannelInterfaceNewAPIVideo, model.ChannelInterfaceNewAPIChannel1, model.ChannelInterfaceNewAPIChannel2, model.ChannelInterfaceXAIVideo, model.ChannelInterfaceVolcengineArkVideo, model.ChannelInterfaceVolcengineJiMengVideo, model.ChannelInterfaceGeminiVeo, model.ChannelInterfaceOpenAiBxinle:
 		return true
 	default:
 		return false

@@ -168,7 +168,7 @@ func DefaultModelCapabilityConfigForModel(protocol string, modelName string) *Mo
 		video.References.MaxVideoDuration, video.References.MaxAudioDuration = 15, 15
 		video.GenerateAudio = VideoBooleanConfig{Supported: true, Default: true}
 		video.Watermark = VideoBooleanConfig{Supported: true, Default: false}
-	case model.ChannelInterfaceOpAIBxinle:
+	case model.ChannelInterfaceOpenAiBxinle:
 		video.References.MaxImages = 9
 		video.References.MaxVideos, video.References.MaxAudios = 3, 3
 		video.References.MaxVideoBytes, video.References.MaxAudioBytes = 200*1024*1024, 15*1024*1024

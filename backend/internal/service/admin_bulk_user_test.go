@@ -1,8 +1,12 @@
 package service
 
 import (
+	"errors"
+	"strings"
 	"testing"
+	"time"
 
+	"infinite-canvas/backend/internal/database"
 	"infinite-canvas/backend/internal/model"
 	"infinite-canvas/backend/internal/repository"
 
@@ -148,14 +152,111 @@ func TestBulkDisableUsersRejectsCurrentAdmin(t *testing.T) {
 	}
 }
 
+func TestDeleteUserRemovesAccountAndRelatedData(t *testing.T) {
+	db := newBulkUserTestDB(t)
+	now := time.Now()
+	actor := model.User{ID: "admin-1", Username: "admin", Role: model.UserRoleAdmin, Status: model.UserStatusActive, CreatedAt: now, UpdatedAt: now}
+	target := model.User{ID: "user-1", Username: "target", Email: "target@example.com", Role: model.UserRoleUser, Status: model.UserStatusActive, CreatedAt: now, UpdatedAt: now}
+	if err := db.Create(&[]model.User{actor, target}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&model.AuthSession{ID: "sess-1", UserID: target.ID, TokenHash: "hash", ExpiresAt: now.Add(time.Hour), CreatedAt: now, UpdatedAt: now}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&model.UserIdentity{ID: "ident-1", UserID: target.ID, Provider: "linuxdo", Subject: "sub-1", CreatedAt: now, UpdatedAt: now}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&model.Task{ID: "task-1", UserID: target.ID, Type: "text", Status: model.TaskStatusSucceeded, CreatedAt: now, UpdatedAt: now}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&model.CreditAccount{UserID: target.ID, AvailableMicrocredits: 1000, CreatedAt: now, UpdatedAt: now}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&model.Project{ID: "proj-1", UserID: target.ID, Name: "Film", Type: "short", CreatedAt: now, UpdatedAt: now}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&model.CanvasProject{ID: "canvas-1", UserID: target.ID, Title: "Board", PayloadJSON: "{}", CreatedAt: now, UpdatedAt: now}).Error; err != nil {
+		t.Fatal(err)
+	}
+	userChannel := model.ModelChannel{ID: "ch-user", UserID: target.ID, Scope: model.ChannelScopeUser, Name: "User Channel", BaseURL: "https://example.com", Enabled: true, CreatedAt: now, UpdatedAt: now}
+	systemChannel := model.ModelChannel{ID: "ch-sys", UserID: target.ID, Scope: model.ChannelScopeSystem, Name: "System Channel", BaseURL: "https://example.com", Enabled: true, CreatedAt: now, UpdatedAt: now}
+	if err := db.Create(&[]model.ModelChannel{userChannel, systemChannel}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	if err := (&Service{repo: repository.New(db)}).DeleteUser(&actor, target.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.First(&model.User{}, "id = ?", target.ID).Error; !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("user still exists: %v", err)
+	}
+	assertCount(t, db.Model(&model.AuthSession{}).Where("user_id = ?", target.ID), 0)
+	assertCount(t, db.Model(&model.UserIdentity{}).Where("user_id = ?", target.ID), 0)
+	assertCount(t, db.Model(&model.Task{}).Where("user_id = ?", target.ID), 0)
+	assertCount(t, db.Model(&model.CreditAccount{}).Where("user_id = ?", target.ID), 0)
+	assertCount(t, db.Model(&model.Project{}).Where("user_id = ?", target.ID), 0)
+	assertCount(t, db.Model(&model.CanvasProject{}).Where("user_id = ?", target.ID), 0)
+	assertCount(t, db.Unscoped().Model(&model.ModelChannel{}).Where("id = ?", userChannel.ID), 0)
+	assertCount(t, db.Model(&model.ModelChannel{}).Where("id = ?", systemChannel.ID), 1)
+	if err := db.Where("action = ? AND target_id = ?", "user.delete", target.ID).First(&model.AdminAuditEvent{}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.First(&model.User{}, "id = ?", actor.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestDeleteUserRejectsCurrentAdmin(t *testing.T) {
+	db := newBulkUserTestDB(t)
+	actor := model.User{ID: "admin-1", Username: "admin", Role: model.UserRoleAdmin, Status: model.UserStatusActive}
+	other := model.User{ID: "admin-2", Username: "admin-two", Role: model.UserRoleAdmin, Status: model.UserStatusActive}
+	if err := db.Create(&[]model.User{actor, other}).Error; err != nil {
+		t.Fatal(err)
+	}
+	err := (&Service{repo: repository.New(db)}).DeleteUser(&actor, actor.ID)
+	if err == nil || !strings.Contains(err.Error(), "不能删除当前登录的管理员账号") {
+		t.Fatalf("DeleteUser() error = %v", err)
+	}
+	if err := db.First(&model.User{}, "id = ?", actor.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestDeleteUserRejectsLastAdmin(t *testing.T) {
+	db := newBulkUserTestDB(t)
+	actor := model.User{ID: "admin-1", Username: "admin", Role: model.UserRoleAdmin, Status: model.UserStatusDisabled}
+	target := model.User{ID: "admin-2", Username: "admin-two", Role: model.UserRoleAdmin, Status: model.UserStatusActive}
+	if err := db.Create(&[]model.User{actor, target}).Error; err != nil {
+		t.Fatal(err)
+	}
+	err := (&Service{repo: repository.New(db)}).DeleteUser(&actor, target.ID)
+	if err == nil || !strings.Contains(err.Error(), "至少需要保留一个管理员") {
+		t.Fatalf("DeleteUser() error = %v", err)
+	}
+	if err := db.First(&model.User{}, "id = ?", target.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+}
+
 func newBulkUserTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&model.User{}, &model.AuthSession{}, &model.AdminAuditEvent{}, &model.CreditAccount{}, &model.CreditLedgerEntry{}, &model.SystemSetting{}, &model.TaskTextDelta{}); err != nil {
+	if err := db.AutoMigrate(database.Models()...); err != nil {
 		t.Fatal(err)
 	}
 	return db
+}
+
+func assertCount(t *testing.T, query *gorm.DB, want int64) {
+	t.Helper()
+	var count int64
+	if err := query.Count(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+	if count != want {
+		t.Fatalf("count = %d, want %d", count, want)
+	}
 }

@@ -480,7 +480,7 @@ func capabilityForProtocol(protocol model.ChannelInterfaceType) string {
 		return "image"
 	case model.ChannelInterfaceOpenAIAudio, model.ChannelInterfaceAsyncAudio:
 		return "audio"
-	case model.ChannelInterfaceNewAPIVideo, model.ChannelInterfaceNewAPIChannel1, model.ChannelInterfaceNewAPIChannel2, model.ChannelInterfaceXAIVideo, model.ChannelInterfaceVolcengineArkVideo, model.ChannelInterfaceVolcengineJiMengVideo, model.ChannelInterfaceGeminiVeo, model.ChannelInterfaceOpAIBxinle:
+	case model.ChannelInterfaceNewAPIVideo, model.ChannelInterfaceNewAPIChannel1, model.ChannelInterfaceNewAPIChannel2, model.ChannelInterfaceXAIVideo, model.ChannelInterfaceVolcengineArkVideo, model.ChannelInterfaceVolcengineJiMengVideo, model.ChannelInterfaceGeminiVeo, model.ChannelInterfaceOpenAiBxinle:
 		return "video"
 	case model.ChannelInterfaceChatCompletion, model.ChannelInterfaceOpenAIResponse:
 		return "text"

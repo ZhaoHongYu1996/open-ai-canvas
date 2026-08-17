@@ -150,7 +150,7 @@ export function defaultModelCapabilityConfig(protocol?: ModelProtocol, model = "
         video.duration = { selection: "enum", values: [4, 6, 8], default: 6 };
         video.resolutions = ["720p", "1080p"];
     }
-    if (protocol === "opAIBxinle") {
+    if (protocol === "OpenAiBxinle") {
         video.references.maxImages = 9;
         video.references.maxVideos = 3;
         video.references.maxAudios = 3;

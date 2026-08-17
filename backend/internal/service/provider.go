@@ -1316,7 +1316,7 @@ func audioFormatMimeType(format string) string {
 }
 
 func runVideoTask(ctx context.Context, input canvasGenerationInput) (map[string]interface{}, error) {
-	if input.Config.InterfaceType == string(model.ChannelInterfaceOpAIBxinle) {
+	if input.Config.InterfaceType == string(model.ChannelInterfaceOpenAiBxinle) {
 		return runOpAIBxinleVideoTask(ctx, input)
 	}
 	if input.Config.InterfaceType == string(model.ChannelInterfaceVolcengineJiMengVideo) {
@@ -2013,7 +2013,7 @@ func validateGenerationInterface(mode string, interfaceType string) error {
 	allowed := map[string]map[string]bool{
 		"text":  {"chat-completion": true, "openai-response": true},
 		"image": {"openai-image": true, "grok-image": true, "volcengine-ark-image": true, "volcengine-jimeng-image": true},
-		"video": {"newapi": true, "newapi-channel-1": true, "newapi-channel-2": true, "xai-video": true, "volcengine-ark-video": true, "volcengine-jimeng-video": true, "gemini-veo": true, "opAIBxinle": true},
+		"video": {"newapi": true, "newapi-channel-1": true, "newapi-channel-2": true, "xai-video": true, "volcengine-ark-video": true, "volcengine-jimeng-video": true, "gemini-veo": true, "OpenAiBxinle": true},
 		"audio": {"openai-audio": true, "async-audio": true},
 	}
 	if allowed[mode] != nil && !allowed[mode][interfaceType] {

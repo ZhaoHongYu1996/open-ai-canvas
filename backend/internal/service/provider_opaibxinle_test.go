@@ -177,10 +177,10 @@ func TestWrapOpAIBxinleHTTPError(t *testing.T) {
 }
 
 func TestValidateGenerationInterfaceOpAIBxinle(t *testing.T) {
-	if err := validateGenerationInterface("video", "opAIBxinle"); err != nil {
+	if err := validateGenerationInterface("video", "OpenAiBxinle"); err != nil {
 		t.Fatal(err)
 	}
-	if err := validateGenerationInterface("image", "opAIBxinle"); err == nil {
+	if err := validateGenerationInterface("image", "OpenAiBxinle"); err == nil {
 		t.Fatal("image should reject video protocol")
 	}
 }

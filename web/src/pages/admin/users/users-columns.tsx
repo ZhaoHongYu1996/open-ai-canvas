@@ -1,6 +1,6 @@
 import { Tag } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import { Eye, Pencil, Power } from "lucide-react";
+import { Eye, Pencil, Power, Trash2 } from "lucide-react";
 
 import { formatCredits } from "@/constant/credits";
 import { IdentityProviderBadge } from "@/components/layout/identity-provider-badge";
@@ -25,12 +25,14 @@ export function createUserColumns({
     onView,
     onEdit,
     onToggleStatus,
+    onDelete,
 }: {
     actorId?: string;
     visibleColumns: Set<UserColumnKey>;
     onView: (user: AdminUser) => void;
     onEdit: (user: AdminUser) => void;
     onToggleStatus: (user: AdminUser) => Promise<void>;
+    onDelete: (user: AdminUser) => Promise<void>;
 }): ColumnsType<AdminUser> {
     const columns: Array<ColumnsType<AdminUser>[number] & { key: UserColumnKey }> = [
         {
@@ -79,6 +81,19 @@ export function createUserColumns({
                                 okText: user.status === "active" ? "确认停用" : "确认启用",
                             },
                             onClick: () => onToggleStatus(user),
+                        },
+                        {
+                            key: "delete",
+                            label: "删除用户",
+                            icon: <Trash2 className="size-3.5" />,
+                            danger: true,
+                            disabled: user.id === actorId,
+                            confirm: {
+                                title: "删除这个用户？",
+                                description: "将删除该账号及其任务、素材、画布、积分流水和登录态。远端 OSS 对象不会自动清理。该操作不能恢复。",
+                                okText: "确认删除",
+                            },
+                            onClick: () => onDelete(user),
                         },
                     ]}
                 />

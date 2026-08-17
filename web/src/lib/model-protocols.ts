@@ -14,7 +14,7 @@ export type ModelProtocol =
     | "volcengine-ark-video"
     | "volcengine-jimeng-video"
     | "gemini-veo"
-    | "opAIBxinle";
+    | "OpenAiBxinle";
 
 export type ProtocolCapability = "text" | "image" | "video" | "audio";
 
@@ -60,7 +60,7 @@ export const MODEL_PROTOCOLS: ModelProtocolDefinition[] = [
     },
     { value: "volcengine-jimeng-video", label: "即梦官方视频", capability: "video", create: "POST CVSync2AsyncSubmitTask", poll: "POST CVSync2AsyncGetResult", contentType: "application/json + AK/SK 签名", media: "文本或一张首帧图，模型标识填写 req_key" },
     { value: "gemini-veo", label: "Gemini Veo", capability: "video", create: "POST /v1beta/models/{model}:predictLongRunning", poll: "GET /v1beta/{operation_name}", contentType: "application/json", media: "文本与单张起始图" },
-    { value: "opAIBxinle", label: "opAIBxinle / ZeroFA Seedance", capability: "video", create: "POST /v1/videos", poll: "GET /v1/videos/{id}", contentType: "application/json", media: "image / first_frame / last_frame / reference_video / reference_audio，音频须配合图片或视频" },
+    { value: "OpenAiBxinle", label: "OpenAiBxinle / ZeroFA Seedance", capability: "video", create: "POST /v1/videos", poll: "GET /v1/videos/{id}", contentType: "application/json", media: "image / first_frame / last_frame / reference_video / reference_audio，音频须配合图片或视频" },
 ];
 
 export const MODEL_PROTOCOL_OPTIONS = protocolGroups(MODEL_PROTOCOLS.filter((item) => !item.value.startsWith("volcengine-jimeng-")));

@@ -48,7 +48,7 @@ func runOpAIBxinleVideoTask(ctx context.Context, input canvasGenerationInput) (m
 		id = firstNonEmptyString(stringField(created, "id"), stringField(created, "task_id"))
 	}
 	if id == "" {
-		return nil, errors.New("opAIBxinle 没有返回任务 ID")
+		return nil, errors.New("OpenAiBxinle 没有返回任务 ID")
 	}
 	for deadline := providerPollingDeadline(ctx); time.Now().Before(deadline); {
 		var state map[string]interface{}
@@ -63,13 +63,13 @@ func runOpAIBxinleVideoTask(ctx context.Context, input canvasGenerationInput) (m
 			return downloadOpAIBxinleVideoResult(ctx, input.Config, id, state)
 		}
 		if status == "failed" || status == "error" {
-			return nil, fmt.Errorf("opAIBxinle 视频生成失败（任务 %s）：%s", id, opAIBxinleErrorMessage(state))
+			return nil, fmt.Errorf("OpenAiBxinle 视频生成失败（任务 %s）：%s", id, opAIBxinleErrorMessage(state))
 		}
 		if err := sleepContext(ctx, opAIBxinleVideoPollInterval); err != nil {
 			return nil, err
 		}
 	}
-	return nil, fmt.Errorf("opAIBxinle 视频生成超时（任务 %s）", id)
+	return nil, fmt.Errorf("OpenAiBxinle 视频生成超时（任务 %s）", id)
 }
 
 func downloadOpAIBxinleVideoResult(ctx context.Context, config providerConfig, id string, state map[string]interface{}) (map[string]interface{}, error) {
@@ -83,9 +83,9 @@ func downloadOpAIBxinleVideoResult(ctx context.Context, config providerConfig, i
 	data, mimeType, err := getBinary(withProviderRequestKind(ctx, "download"), config, "/videos/"+id+"/content")
 	if err != nil {
 		if videoURL != "" {
-			return nil, fmt.Errorf("opAIBxinle 任务 %s 结果地址与 content 端点均下载失败，地址可能已失效", id)
+			return nil, fmt.Errorf("OpenAiBxinle 任务 %s 结果地址与 content 端点均下载失败，地址可能已失效", id)
 		}
-		return nil, fmt.Errorf("opAIBxinle 任务 %s 已成功但没有返回可下载的视频地址", id)
+		return nil, fmt.Errorf("OpenAiBxinle 任务 %s 已成功但没有返回可下载的视频地址", id)
 	}
 	return map[string]interface{}{"mode": "video", "video": map[string]interface{}{"dataUrl": dataURL(mimeType, data), "mimeType": defaultString(mimeType, "video/mp4"), "expiresHint": "上游结果地址可能临时有效，请尽快预览或下载"}}, nil
 }
@@ -115,19 +115,19 @@ func opAIBxinleErrorMessage(state map[string]interface{}) string {
 
 func opAIBxinleVideoRequestBody(input canvasGenerationInput) (opAIBxinleVideoRequest, error) {
 	if strings.TrimSpace(input.Prompt) == "" {
-		return opAIBxinleVideoRequest{}, errors.New("opAIBxinle 需要填写 prompt")
+		return opAIBxinleVideoRequest{}, errors.New("OpenAiBxinle 需要填写 prompt")
 	}
 	if len(input.ReferenceImages) > 9 {
-		return opAIBxinleVideoRequest{}, errors.New("opAIBxinle 最多支持 9 张参考图片")
+		return opAIBxinleVideoRequest{}, errors.New("OpenAiBxinle 最多支持 9 张参考图片")
 	}
 	if len(input.ReferenceVideos) > 3 {
-		return opAIBxinleVideoRequest{}, errors.New("opAIBxinle 最多支持 3 个参考视频")
+		return opAIBxinleVideoRequest{}, errors.New("OpenAiBxinle 最多支持 3 个参考视频")
 	}
 	if len(input.ReferenceAudios) > 3 {
-		return opAIBxinleVideoRequest{}, errors.New("opAIBxinle 最多支持 3 个参考音频")
+		return opAIBxinleVideoRequest{}, errors.New("OpenAiBxinle 最多支持 3 个参考音频")
 	}
 	if len(input.ReferenceAudios) > 0 && len(input.ReferenceImages) == 0 && len(input.ReferenceVideos) == 0 {
-		return opAIBxinleVideoRequest{}, errors.New("opAIBxinle 的参考音频必须与至少一个图片或视频参考素材同时使用")
+		return opAIBxinleVideoRequest{}, errors.New("OpenAiBxinle 的参考音频必须与至少一个图片或视频参考素材同时使用")
 	}
 
 	imageURLs := make([]string, 0, len(input.ReferenceImages))
@@ -189,7 +189,7 @@ func opAIBxinleVideoRequestBody(input canvasGenerationInput) (opAIBxinleVideoReq
 		Prompt: strings.TrimSpace(input.Prompt),
 	}
 	if body.Model == "" {
-		return opAIBxinleVideoRequest{}, errors.New("opAIBxinle 需要配置模型 ID")
+		return opAIBxinleVideoRequest{}, errors.New("OpenAiBxinle 需要配置模型 ID")
 	}
 	if duration, ok := opAIBxinleDuration(input.Config.VideoSeconds); ok {
 		body.Duration = &duration
@@ -284,22 +284,22 @@ func wrapOpAIBxinleHTTPError(err error, action string) error {
 		return err
 	}
 	if errors.Is(err, context.DeadlineExceeded) || strings.Contains(strings.ToLower(err.Error()), "timeout") {
-		return fmt.Errorf("opAIBxinle %s超时", action)
+		return fmt.Errorf("OpenAiBxinle %s超时", action)
 	}
 	var httpErr providerHTTPError
 	if errors.As(err, &httpErr) {
 		switch httpErr.StatusCode {
 		case http.StatusUnauthorized:
-			return fmt.Errorf("opAIBxinle %s失败：认证无效（401）", action)
+			return fmt.Errorf("OpenAiBxinle %s失败：认证无效（401）", action)
 		case http.StatusPaymentRequired:
-			return fmt.Errorf("opAIBxinle %s失败：余额不足（402）", action)
+			return fmt.Errorf("OpenAiBxinle %s失败：余额不足（402）", action)
 		case http.StatusTooManyRequests:
-			return fmt.Errorf("opAIBxinle %s失败：请求过于频繁（429）", action)
+			return fmt.Errorf("OpenAiBxinle %s失败：请求过于频繁（429）", action)
 		default:
 			if httpErr.StatusCode >= 500 {
-				return fmt.Errorf("opAIBxinle %s失败：上游服务异常（%d）", action, httpErr.StatusCode)
+				return fmt.Errorf("OpenAiBxinle %s失败：上游服务异常（%d）", action, httpErr.StatusCode)
 			}
-			return fmt.Errorf("opAIBxinle %s失败：上游 HTTP %d", action, httpErr.StatusCode)
+			return fmt.Errorf("OpenAiBxinle %s失败：上游 HTTP %d", action, httpErr.StatusCode)
 		}
 	}
 	return err
