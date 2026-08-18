@@ -114,7 +114,6 @@ function ImageSettingsPortal({
         background: theme.canvas.background,
         border: `1px solid ${theme.toolbar.border}`,
         borderRadius: 10,
-        boxShadow: `0 24px 72px ${theme.spatial.shadow}`,
         padding: 12,
         overflowY: "auto",
         color: theme.node.text,

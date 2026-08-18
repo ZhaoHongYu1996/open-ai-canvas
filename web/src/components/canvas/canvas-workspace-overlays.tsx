@@ -118,7 +118,7 @@ export function CanvasNodePanelOverlay({ node, viewport, containerRef, panelWidt
         <div
             ref={panelRef}
             data-canvas-no-zoom
-            className="thin-scrollbar absolute z-[var(--z-modal-overlay)] max-w-[calc(100%_-_24px)] overflow-y-auto"
+            className="canvas-node-panel-overlay thin-scrollbar absolute z-[var(--z-modal-overlay)] max-w-[calc(100%_-_24px)]"
             style={{ left: initialPosition.left, top: initialPosition.top, width: initialWidth, maxHeight: "calc(100% - 84px)" }}
             onMouseDown={(event) => event.stopPropagation()}
             onPointerDown={(event) => event.stopPropagation()}

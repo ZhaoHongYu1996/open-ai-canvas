@@ -92,7 +92,6 @@ function AudioSettingsPortal({
         background: theme.spatial.elevated,
         border: `1px solid ${theme.toolbar.border}`,
         borderRadius: 10,
-        boxShadow: `0 24px 72px ${theme.spatial.shadow}, inset 0 1px 0 rgba(255,255,255,.08)`,
         padding: 12,
         overflowY: "auto",
         color: theme.node.text,

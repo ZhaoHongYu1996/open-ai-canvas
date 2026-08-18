@@ -433,8 +433,9 @@
     --cn-spatial-surface: var(--workspace-surface);
     --cn-spatial-surface-strong: var(--workspace-surface-strong);
     --cn-spatial-shadow: rgba(0, 0, 0, 0.12);
-    --cn-spatial-glow: rgba(125, 162, 255, 0.2);
-    --cn-spatial-glow-strong: rgba(125, 162, 255, 0.35);
+    /* 与 canvasThemes.spatial.glow 对齐：明色主题用深色微光勾勒节点外框 */
+    --cn-spatial-glow: rgba(17, 17, 17, 0.14);
+    --cn-spatial-glow-strong: rgba(17, 17, 17, 0.42);
     --cn-spatial-elevated: var(--color-neutral-0);
     --cn-spatial-toolbar-border: var(--color-neutral-200);
 
@@ -569,8 +570,9 @@
     --cn-spatial-surface: var(--workspace-surface);
     --cn-spatial-surface-strong: var(--workspace-surface-strong);
     --cn-spatial-shadow: rgba(0, 0, 0, 0.4);
-    --cn-spatial-glow: rgba(125, 162, 255, 0.15);
-    --cn-spatial-glow-strong: rgba(125, 162, 255, 0.25);
+    /* 与 canvasThemes.spatial.glow 对齐：暗色主题用浅色微光勾勒节点外框 */
+    --cn-spatial-glow: rgba(255, 255, 255, 0.12);
+    --cn-spatial-glow-strong: rgba(255, 255, 255, 0.36);
     --cn-spatial-elevated: var(--color-neutral-900);
     --cn-spatial-toolbar-border: rgba(255, 255, 255, 0.1);
 
@@ -666,6 +668,9 @@
     --library-selected-stroke: var(--control-selected-border);
     --library-hover-offset: -2px;
     --library-active-offset: -1px;
+    --library-card-glow: var(--node-outer-glow);
+    --library-card-glow-hover: var(--node-outer-glow-related);
+    --library-card-glow-selected: var(--node-outer-glow-active);
 
     /* Dock 组件（FloatingDock、悬停工具栏，对应 #95 工具栏方案）*/
     --dock-radius: var(--r-xl);            /* 14px */
@@ -696,7 +701,7 @@
     --canvas-create-node-height: var(--space-12);
     --canvas-create-resource-height: var(--space-8);
 
-    /* Node 组件：节点首先是内容容器，常态不使用卡片投影或发光。 */
+    /* Node 组件：内容容器 + 一层跟随主题的外框外发光（非卡片投影）。 */
     --node-radius: var(--r-lg);           /* 12px */
     --node-header-height: 24px;
     --node-title-fs: var(--fs-label);     /* 11px */
@@ -706,13 +711,17 @@
     --node-z-content: 30;                 /* 节点遮罩层（stacking context 内，见 ADR-001）*/
     --node-z-overlay: 40;                 /* 节点角标/按钮层 */
     --node-z-handle: 50;                  /* 节点 resize handle 层 */
+    --node-outer-glow: 0 0 0 1px color-mix(in srgb, var(--cn-spatial-glow-strong) 72%, transparent), 0 0 12px var(--cn-spatial-glow-strong), 0 0 28px var(--cn-spatial-glow);
+    --node-outer-glow-related: 0 0 0 1px var(--cn-spatial-glow-strong), 0 0 16px var(--cn-spatial-glow-strong), 0 0 32px var(--cn-spatial-glow);
+    --node-outer-glow-active: 0 0 0 1px color-mix(in srgb, var(--cn-active-stroke) 78%, transparent), 0 0 18px var(--cn-spatial-glow-strong), 0 0 36px color-mix(in srgb, var(--cn-spatial-glow-strong) 85%, transparent);
+    --node-outer-glow-spread: 36px;
 
-    /* 节点上下文生成器：一层浮动表面，内部仅靠明度和间距组织信息。 */
+    /* 节点上下文生成器：一层浮动表面，外发光与选中节点共用同一主题光。 */
     --canvas-composer-radius: var(--r-lg);
     --canvas-composer-surface: var(--workspace-surface-strong);
     --canvas-composer-control-surface: color-mix(in srgb, var(--foreground) 5%, transparent);
     --canvas-composer-control-hover: color-mix(in srgb, var(--foreground) 8%, transparent);
-    --canvas-composer-shadow: var(--elevation-card);
+    --canvas-composer-shadow: var(--node-outer-glow-active);
     --canvas-composer-settings-width: 138px;
     --canvas-mention-menu-max-height: 320px;
     --canvas-mention-search-height: 40px;
@@ -3625,11 +3634,11 @@
     .canvas-library-page .app-pagination-bar { position: static; margin-top: var(--space-4); border: 0; background: transparent; padding: var(--space-1-half) var(--space-2); backdrop-filter: none; }
 
     /* === 画布卡片重构（对应 docs/ui-design-system.md）=== */
-    .app-canvas-project-card { min-width: 0; cursor: pointer; color: var(--foreground); transition: transform var(--motion-state) var(--motion-ease-out), background-color var(--motion-state) ease-out; }
+    .app-canvas-project-card { min-width: 0; cursor: pointer; color: var(--foreground); transition: transform var(--motion-state) var(--motion-ease-out), background-color var(--motion-state) ease-out, box-shadow var(--motion-state) var(--ease-aceternity); }
 
-    /* 创建卡与内容卡使用相同表面和克制位移。 */
-    .app-canvas-create-card { display: flex; min-width: 0; cursor: pointer; flex-direction: column; align-items: stretch; border: 0; border-radius: var(--r-lg); background: var(--card-surface); padding: 0; color: var(--foreground); text-align: left; transition: transform var(--motion-state) var(--motion-ease-out), background-color var(--motion-state) ease-out; }
-    .app-canvas-create-card:hover:not(:disabled), .app-canvas-create-card:focus-visible { background: var(--card-surface-hover); transform: translateY(-2px); }
+    /* 创建卡与内容卡使用相同表面、位移和外发光。 */
+    .app-canvas-create-card { display: flex; min-width: 0; cursor: pointer; flex-direction: column; align-items: stretch; overflow: visible; border: 0; border-radius: var(--r-lg); background: var(--card-surface); padding: 0; color: var(--foreground); text-align: left; box-shadow: var(--library-card-glow); transition: transform var(--motion-state) var(--motion-ease-out), background-color var(--motion-state) ease-out, box-shadow var(--motion-state) var(--ease-aceternity); }
+    .app-canvas-create-card:hover:not(:disabled), .app-canvas-create-card:focus-visible { background: var(--card-surface-hover); box-shadow: var(--library-card-glow-hover); transform: translateY(-2px); }
     .app-canvas-create-card:active:not(:disabled) { transform: translateY(-1px) scale(0.995); transition-duration: var(--motion-instant); }
     .app-canvas-create-card:focus-visible { outline: 0; }
     .app-canvas-create-preview { display: grid; aspect-ratio: 16 / 9; place-items: center; overflow: hidden; border: 0; border-radius: var(--r-lg) var(--r-lg) 0 0; background: var(--canvas-cover-surface); box-shadow: none; }
@@ -3640,12 +3649,12 @@
     .app-canvas-create-meta { margin: 6px 14px 16px; color: color-mix(in srgb, var(--foreground) 38%, transparent); font-size: var(--fs-caption); }
     .app-canvas-create-card:disabled { cursor: not-allowed; opacity: .5; }
 
-    /* 画布卡片依靠表面明度表达 hover，选中态才显示描边。 */
-    .app-canvas-project-card.is-library { overflow: hidden; border: 0; border-radius: var(--r-lg); background: var(--card-surface); box-shadow: none; content-visibility: auto; contain-intrinsic-size: 0 320px; }
+    /* 画布卡片外发光跟随主题；封面区单独裁切圆角，外壳 overflow 保持 visible。 */
+    .app-canvas-project-card.is-library { overflow: visible; border: 0; border-radius: var(--r-lg); background: var(--card-surface); box-shadow: var(--library-card-glow); content-visibility: auto; contain-intrinsic-size: 0 320px; }
     .app-canvas-project-card.is-library .app-canvas-project-preview { overflow: hidden; border-radius: var(--r-lg) var(--r-lg) 0 0; background: var(--canvas-cover-surface); }
-    .app-canvas-project-card.is-library:hover, .app-canvas-project-card.is-library:focus-within { background: var(--card-surface-hover); box-shadow: none; transform: translateY(-2px); }
+    .app-canvas-project-card.is-library:hover, .app-canvas-project-card.is-library:focus-within { background: var(--card-surface-hover); box-shadow: var(--library-card-glow-hover); transform: translateY(-2px); }
     .app-canvas-project-card.is-library:active { transform: translateY(-1px) scale(0.995); transition-duration: var(--motion-instant); }
-    .app-canvas-project-card.is-library.is-selected { box-shadow: 0 0 0 1px color-mix(in srgb, var(--workspace-accent) 52%, transparent); border-radius: var(--r-lg); }
+    .app-canvas-project-card.is-library.is-selected { box-shadow: var(--library-card-glow-selected); border-radius: var(--r-lg); }
     .app-canvas-project-card.is-recent .app-canvas-project-preview { overflow: hidden; border-radius: var(--r-2xl) var(--r-2xl) 0 0; background: var(--workspace-surface-strong); transition: box-shadow 420ms var(--motion-ease-out), transform 420ms var(--motion-ease-out); }
     .app-canvas-project-card.is-recent:hover .app-canvas-project-preview, .app-canvas-project-card.is-recent:focus-within .app-canvas-project-preview { box-shadow: 0 18px 36px color-mix(in srgb, var(--foreground) 13%, transparent); transform: translateY(-4px); }
 
@@ -3672,9 +3681,9 @@
     .app-canvas-project-body.is-compact { min-height: 0; padding: 11px 1px 1px; }
     .app-canvas-project-card:hover .app-canvas-project-body { background: transparent; }
 
-    /* Focus状态 - 键盘导航可见 */
-    .app-canvas-project-card:focus:not(:focus-visible) { outline: none; box-shadow: none; }
-    .app-canvas-project-card:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; box-shadow: none; }
+    /* Focus状态 - 键盘导航可见，不清掉主题外发光 */
+    .app-canvas-project-card:focus:not(:focus-visible) { outline: none; }
+    .app-canvas-project-card:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
     .canvas-project-card-footer { margin-top: 12px; }
     .canvas-project-heading-row { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 10px; }
     .canvas-project-title-button { min-width: 0; flex: 1; cursor: pointer; border: 0; background: transparent; padding: 0; text-align: left; }
@@ -5523,15 +5532,11 @@
         border: 0 !important;
         border-radius: 10px !important;
         background: var(--workspace-surface-strong) !important;
-        box-shadow: 0 14px 38px rgba(0, 0, 0, 0.22) !important;
-        overflow: hidden;
+        box-shadow: var(--canvas-composer-shadow) !important;
+        overflow: visible;
         padding: 0 !important;
         backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
         -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-    }
-
-    .dark .canvas-composer-popover-surface {
-        box-shadow: 0 16px 40px rgba(0, 0, 0, 0.34) !important;
     }
 
     .canvas-composer-popover-content {
@@ -5720,11 +5725,11 @@
 
     html:not(.dark) body.app-spatial-overlays .canvas-composer-popover-surface {
         background: #ffffff !important;
-        box-shadow: 0 14px 34px rgba(15, 23, 42, 0.13) !important;
+        box-shadow: var(--canvas-composer-shadow) !important;
     }
 
     .dark body.app-spatial-overlays .canvas-composer-popover-surface {
-        box-shadow: 0 16px 40px rgba(0, 0, 0, 0.3) !important;
+        box-shadow: var(--canvas-composer-shadow) !important;
     }
 
     .agent-text-model-select .ant-select-content {
@@ -5911,8 +5916,19 @@
             background-color var(--motion-state) var(--ease-aceternity);
     }
 
+    /* 节点外框外发光：常态用主题 spatial glow，选中/焦点/连线目标加强并叠一层 active stroke */
     .canvas-node-shell {
-        box-shadow: none;
+        box-shadow: var(--node-outer-glow);
+    }
+
+    .canvas-node-shell[data-node-state="related"] {
+        box-shadow: var(--node-outer-glow-related);
+    }
+
+    .canvas-node-shell[data-node-state="selected"],
+    .canvas-node-shell[data-node-state="focus"],
+    .canvas-node-shell[data-node-state="target"] {
+        box-shadow: var(--node-outer-glow-active);
     }
 
     .canvas-node-inline-action {
@@ -5927,15 +5943,36 @@
         background: var(--canvas-composer-control-hover);
     }
 
+    /* overflow 保持 visible，避免外发光被自身裁切；圆角裁切交给内部编辑区。 */
     .canvas-node-composer {
         position: relative;
-        overflow: hidden;
+        overflow: visible;
         border: 0;
         border-radius: var(--canvas-composer-radius);
         background: var(--canvas-composer-surface);
         color: var(--cn-text);
         box-shadow: var(--canvas-composer-shadow);
         padding: var(--space-3);
+    }
+
+    .canvas-node-panel-overlay {
+        box-sizing: content-box;
+        padding: var(--node-outer-glow-spread);
+        margin: calc(var(--node-outer-glow-spread) * -1);
+        overflow-y: auto;
+    }
+
+    .canvas-node-panel-overlay .aceternity-floating-panel {
+        box-shadow: var(--canvas-composer-shadow);
+    }
+
+    .canvas-image-settings-popover.aceternity-floating-panel {
+        box-shadow: var(--canvas-composer-shadow);
+    }
+
+    .canvas-prompt-editor-modal .ant-modal-container {
+        overflow: visible;
+        box-shadow: var(--canvas-composer-shadow);
     }
 
     .canvas-node-composer-header {
