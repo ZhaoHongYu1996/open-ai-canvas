@@ -18,7 +18,7 @@ const settingsMockContext: ToolContext = {
     selectedCount: 0,
     selectedNodeTypes: new Set(),
     selectedVideoCount: 0,
-    canvasTool: "move",
+    canvasTool: "box-select",
     workspaceMode: "professional",
     isProjectLinked: false,
     canUndo: false,

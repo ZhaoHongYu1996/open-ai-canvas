@@ -2,7 +2,8 @@ import { scopedLocalStorage } from "@/lib/user-scope";
 
 import type { ToolbarId, ToolbarPrefs } from "./tool-definition";
 
-const STORAGE_VERSION = "v1";
+// 主工具栏默认顺序调整后升版本，避免旧偏好把框选继续排在第二位
+const STORAGE_VERSION = "v2";
 const storageKey = (toolbar: ToolbarId) => `canvas-toolbar-prefs-${toolbar}-${STORAGE_VERSION}`;
 
 /**
