@@ -1,6 +1,7 @@
 import { Button, Tooltip } from "antd";
 import { Eye, FileText, Image as ImageIcon, RotateCcw, Video, X } from "lucide-react";
 
+import { MediaPreview } from "@/components/media-preview";
 import { CONTENT_MODERATION_ERROR_CODE, isContentModerationError } from "@/lib/generation-error";
 import { statusLabel } from "@/lib/generation-task-display";
 import type { GenerationTask } from "@/services/api/task-center";
@@ -16,11 +17,7 @@ export function TaskGridCard({ task, actingId, onOpen, onRetry, onCancel }: { ta
         <article className={`task-grid-card${isFailed ? " is-attention" : ""}`}>
             <div className="task-grid-thumb">
                 {task.previewUrl ? (
-                    isVideo ? (
-                        <video src={task.previewUrl} muted playsInline preload="metadata" className="h-full w-full object-cover" />
-                    ) : (
-                        <img src={task.previewUrl} alt="" loading="lazy" className="h-full w-full object-cover" />
-                    )
+                    <MediaPreview src={task.previewUrl} kind={isVideo ? "video" : "image"} loading="lazy" className="h-full w-full object-cover" />
                 ) : (
                     <Icon />
                 )}

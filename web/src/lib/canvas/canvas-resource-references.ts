@@ -1,4 +1,5 @@
 import { imageReferenceLabel } from "@/lib/image-reference-prompt";
+import { getNodeResourceKind } from "@/lib/canvas/node-registry";
 import { seedanceReferenceLabel } from "@/lib/seedance-video";
 import type { Skill } from "@/services/api/skills";
 import type { Asset, AssetCategory } from "@/stores/use-asset-store";
@@ -152,15 +153,13 @@ function isResourceNode(node: CanvasNodeData) {
 }
 
 function resourceKind(node: CanvasNodeData): CanvasResourceKind | null {
+    // 角色卡是跨类型覆盖：任何节点带上角色元数据都按角色处理，故先于按类型判定。
     if (node.metadata?.workflowKind === "character" && node.metadata.characterAssetId) return "character";
     // 连入的图片按节点类型即可作为预引用；生成结果可能只在 storageKey 上，或节点仍为空。
     if (node.type === CanvasNodeType.Image) return "image";
-    if (node.type === CanvasNodeType.Drawing && node.metadata?.drawingId) return "image";
     if (node.type === CanvasNodeType.Video && (node.metadata?.content || node.metadata?.storageKey)) return "video";
     if (node.type === CanvasNodeType.Audio && (node.metadata?.content || node.metadata?.storageKey)) return "audio";
-    if (node.type === CanvasNodeType.Text && (node.metadata?.content || node.metadata?.prompt)) return "text";
-    if (node.type === CanvasNodeType.Skill && (node.metadata?.skillSnapshot || node.metadata?.content)) return "text";
-    return null;
+    return getNodeResourceKind(node);
 }
 
 function mediaPreviewUrl(content?: string) {
