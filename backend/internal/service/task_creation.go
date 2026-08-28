@@ -26,33 +26,26 @@ func (s *Service) CreateTask(userID string, req CreateTaskRequest) (*model.Task,
 		return nil, err
 	}
 
-	// 根据 frontendModelsEnabled 开关强制分流模型选择
-	frontendEnabled, err := s.FeatureEnabled(FeatureFrontendModels)
-	if err != nil {
-		return nil, err
-	}
-
 	var routed *RoutedModel
 	logicalModelID := strings.TrimSpace(req.LogicalModelID)
-
-	if frontendEnabled {
-		// 前台模型模式：必须有 logicalModelId
-		if logicalModelID == "" {
-			return nil, InvalidModelSelection("前台模型模式下必须指定 logicalModelId")
+	workflowProviderTask := taskInputUsesWorkflowProvider(normalizedInput)
+	frontendEnabled := false
+	if workflowProviderTask {
+		config, _ := normalizedInput["config"].(map[string]any)
+		if err := s.RequireWorkflowPluginForUser(userID, strings.TrimSpace(fmt.Sprint(config["interfaceType"]))); err != nil {
+			return nil, err
 		}
-		intent := ModelRequestIntentFromTaskInput(normalizedInput, taskType, req.Operation)
-		routed, err = s.ResolveLogicalModel(logicalModelID, intent)
+	} else {
+		// 工作流是独立执行器；普通模型仍严格使用主线的目录和路由校验。
+		frontendEnabled, err = s.FeatureEnabled(FeatureFrontendModels)
 		if err != nil {
 			return nil, err
 		}
-		normalizedInput = applyRoutedProviderSelection(normalizedInput, routed)
-	} else {
-		// 系统渠道模型模式：禁止 logicalModelId
-		if logicalModelID != "" {
-			return nil, ModelCatalogMismatch("模型目录已更新，请重新选择")
-		}
-		// 必须校验 channelId + model 属于启用的系统渠道模型
-		if err := s.validateSystemChannelModelSelection(normalizedInput); err != nil {
+	}
+
+	if !workflowProviderTask {
+		routed, normalizedInput, err = s.resolveTaskModelSelection(normalizedInput, logicalModelID, taskType, req.Operation, frontendEnabled)
+		if err != nil {
 			return nil, err
 		}
 	}
@@ -87,7 +80,7 @@ func (s *Service) CreateTask(userID string, req CreateTaskRequest) (*model.Task,
 	if activeTasks >= int64(policy.Task.ActiveTaskLimit) {
 		return nil, BadAuthRequest(fmt.Sprintf("同时排队或运行的任务最多 %d 个，请等待已有任务完成", policy.Task.ActiveTaskLimit))
 	}
-	task := model.Task{ID: newID(), UserID: userID, SessionID: req.SessionID, ProjectID: req.ProjectID, Type: taskType, Status: model.TaskStatusQueued, Stage: "等待队列调度", Progress: 5, Prompt: prompt, Operation: req.Operation, Provider: req.Provider, Model: req.Model}
+	task := model.Task{ID: newID(), UserID: userID, TraceID: req.TraceID, RequestID: req.RequestID, SessionID: req.SessionID, ProjectID: req.ProjectID, Type: taskType, Status: model.TaskStatusQueued, Stage: "等待队列调度", Progress: 5, Prompt: prompt, Operation: req.Operation, Provider: req.Provider, Model: req.Model}
 	if routed != nil {
 		task.LogicalModelID = routed.LogicalModel.ID
 		task.LogicalModelRevisionID = routed.Revision.ID
@@ -131,6 +124,34 @@ func (s *Service) CreateTask(userID string, req CreateTaskRequest) (*model.Task,
 	s.recordActivity(userID, "task", 1)
 	_ = s.log(userID, task.ID, "info", "任务已进入队列", "")
 	return taskForOutput(task), nil
+}
+
+// resolveTaskModelSelection 根据请求实际携带的模型选择决定路由方式。
+// 显式系统渠道请求不能被全局前台模型开关误判，但仍必须通过渠道、模型和价格校验。
+func (s *Service) resolveTaskModelSelection(input map[string]any, logicalModelID string, taskType string, operation string, frontendEnabled bool) (*RoutedModel, map[string]any, error) {
+	if frontendEnabled && !taskInputUsesSystemChannel(input) {
+		if logicalModelID == "" {
+			return nil, input, InvalidModelSelection("前台模型模式下必须指定 logicalModelId")
+		}
+		intent := ModelRequestIntentFromTaskInput(input, taskType, operation)
+		routed, err := s.ResolveLogicalModel(logicalModelID, intent)
+		if err != nil {
+			return nil, input, err
+		}
+		return routed, applyRoutedProviderSelection(input, routed), nil
+	}
+
+	if logicalModelID != "" {
+		return nil, input, ModelCatalogMismatch("模型目录已更新，请重新选择")
+	}
+	// 自定义渠道没有系统 channelId；它会在后续由自定义渠道功能开关、
+	// 能力校验和 provider 配置校验共同处理，不能误报为“缺少系统渠道”。
+	if !taskInputUsesCustomChannel(input) {
+		if err := s.validateSystemChannelModelSelection(input); err != nil {
+			return nil, input, err
+		}
+	}
+	return nil, input, nil
 }
 
 func applyRoutedProviderSelection(input map[string]any, routed *RoutedModel) map[string]any {
@@ -215,7 +236,7 @@ func (s *Service) createTextReplayTask(userID string, req CreateTaskRequest, nor
 		return nil, err
 	}
 	task := model.Task{
-		ID: newID(), UserID: userID, SessionID: req.SessionID, ProjectID: req.ProjectID,
+		ID: newID(), UserID: userID, TraceID: req.TraceID, RequestID: req.RequestID, SessionID: req.SessionID, ProjectID: req.ProjectID,
 		Type: taskType, Status: model.TaskStatusTextReplay, Stage: "文本持久化（前端自管）", Progress: 5,
 		Prompt: prompt, Operation: req.Operation, Provider: req.Provider, Model: strings.TrimSpace(req.Model),
 	}
@@ -302,6 +323,9 @@ func (s *Service) validateSystemChannelModelSelection(input map[string]any) erro
 }
 
 func taskInputUsesCustomChannel(input map[string]any) bool {
+	if taskInputUsesWorkflowProvider(input) {
+		return false
+	}
 	config, ok := input["config"].(map[string]any)
 	if !ok {
 		return false
@@ -313,6 +337,23 @@ func taskInputUsesCustomChannel(input map[string]any) bool {
 		return false
 	}
 	return strings.TrimSpace(baseURL) != "" && strings.TrimSpace(apiKey) != ""
+}
+
+func taskInputUsesSystemChannel(input map[string]any) bool {
+	config, ok := input["config"].(map[string]any)
+	if !ok {
+		return false
+	}
+	channelID, _ := config["channelId"].(string)
+	return strings.TrimSpace(channelID) != ""
+}
+
+func taskInputUsesWorkflowProvider(input map[string]any) bool {
+	config, ok := input["config"].(map[string]any)
+	if !ok {
+		return false
+	}
+	return isWorkflowProviderInterface(strings.TrimSpace(fmt.Sprint(config["interfaceType"])))
 }
 
 func compactPersistedValue(value interface{}) interface{} {

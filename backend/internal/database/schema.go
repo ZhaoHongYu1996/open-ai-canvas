@@ -39,12 +39,16 @@ func Models() []any {
 		&model.AdminAuditEvent{},
 		&model.UserDailyActivity{},
 		&model.SystemSetting{},
+		&model.PluginPlatformState{},
+		&model.UserPluginState{},
 		&model.ArkPrivateAssetBinding{},
 		&model.UserOSSSetting{},
+		&model.StorageLocation{},
 		&model.UserDailyUploadUsage{},
 		&model.Skill{},
 		&model.UserSkillState{},
 		&model.Resource{},
+		&model.ResourceDeletionJob{},
 		&model.Asset{},
 		&model.ProjectAssetLink{},
 		&model.ProjectAssetFolder{},
@@ -76,6 +80,8 @@ func Models() []any {
 		&model.TaskLog{},
 		&model.SessionFile{},
 		&model.Result{},
+		&model.ComfyBridge{},
+		&model.ComfyBridgeRequest{},
 	}
 }
 

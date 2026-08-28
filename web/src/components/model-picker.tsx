@@ -1,17 +1,17 @@
-import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
 import { Check, ChevronDown, Coins } from "lucide-react";
 import { Popover } from "antd";
 
 import { canvasThemes, type CanvasTheme } from "@/lib/canvas-theme";
 import { modelCapabilityConfigFor, videoDurationOptions } from "@/lib/model-capabilities";
-import { compatibleModelInGroup, configuredModelDisplayName, groupModelsByDisplayName, modelCompatibilityError, modelRequestOptions, resolveCompatibleModel, type ModelRequirements } from "@/lib/model-selection";
-import { normalizeVideoResolution } from "@/lib/video-generation-options";
+import { modelQuoteRequest, normalizeTierResolution, priceTiersForCurrentSelection } from "@/lib/model-pricing";
+import { compatibleModelInGroup, configuredModelDisplayName, groupModelsByDisplayName, modelCompatibilityError, resolveCompatibleModel, type ModelRequirements } from "@/lib/model-selection";
 import { cn } from "@/lib/utils";
 import { modelDisplayName, modelIcon, modelOptionName, PUBLIC_MODEL_CATALOG_ID, resolveModelChannel, selectableModelsByCapability, type AiConfig, type ModelCapability } from "@/stores/use-config-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { useUserStore } from "@/stores/use-user-store";
 import { ModelLogo } from "@/components/model-logo";
-import { quoteLogicalModel, type LogicalModelQuote, type ModelRequestIntent } from "@/services/api/logical-models";
+import { quoteLogicalModel, type LogicalModelQuote } from "@/services/api/logical-models";
 
 type ModelPickerProps = {
     config: AiConfig;
@@ -19,6 +19,7 @@ type ModelPickerProps = {
     onChange: (model: string) => void;
     capability?: ModelCapability;
     className?: string;
+    popoverClassName?: string;
     fullWidth?: boolean;
     placeholder?: string;
     onMissingConfig?: () => void;
@@ -28,13 +29,14 @@ type ModelPickerProps = {
     showConfiguredModelName?: boolean;
 };
 
-export function ModelPicker({ config, value, onChange, capability, className, fullWidth = false, placeholder = "选择模型", onMissingConfig, showSelectedPrice = true, variant = "default", requirements, showConfiguredModelName = false }: ModelPickerProps) {
+export function ModelPicker({ config, value, onChange, capability, className, popoverClassName, fullWidth = false, placeholder = "选择模型", onMissingConfig, showSelectedPrice = true, variant = "default", requirements, showConfiguredModelName = false }: ModelPickerProps) {
     const creditsEnabled = useUserStore((state) => state.features.creditsEnabled);
     const pickerId = useId();
     // 双保险：即使 store merge 写出非法 theme，这里也兜底到 dark，避免 "reading 'node'" 崩溃
     const rawTheme = useThemeStore((state) => state.theme);
     const theme = (canvasThemes[rawTheme as keyof typeof canvasThemes] ?? canvasThemes.dark) as CanvasTheme;
     const [open, setOpen] = useState(false);
+    const [triggerWidth, setTriggerWidth] = useState<number | null>(null);
     const menuRef = useRef<HTMLDivElement>(null);
     const triggerRef = useRef<HTMLButtonElement>(null);
     const options = useMemo(() => Array.from(new Set(selectableModelsByCapability(config, capability).filter(Boolean))), [capability, config]);
@@ -64,6 +66,16 @@ export function ModelPicker({ config, value, onChange, capability, className, fu
     const quoteRequest = useMemo(() => modelQuoteRequest(config, current, capability, requirements), [capability, config, current, requirements]);
     const [routeQuote, setRouteQuote] = useState<LogicalModelQuote | undefined>();
     const creationVariant = variant === "creation";
+
+    useLayoutEffect(() => {
+        const trigger = triggerRef.current;
+        if (!trigger) return;
+        const updateTriggerWidth = () => setTriggerWidth(Math.ceil(trigger.getBoundingClientRect().width));
+        updateTriggerWidth();
+        const observer = new ResizeObserver(updateTriggerWidth);
+        observer.observe(trigger);
+        return () => observer.disconnect();
+    }, [className, fullWidth, showSelectedPrice, variant, value]);
 
     useEffect(() => {
         if (!showSelectedPrice || !creditsEnabled || !quoteRequest) {
@@ -139,7 +151,11 @@ export function ModelPicker({ config, value, onChange, capability, className, fu
             ref={menuRef}
             data-canvas-no-zoom
             className={cn("canvas-model-picker-menu max-w-[calc(100vw-24px)]", creationVariant ? "creation-model-picker-menu w-[360px]" : "w-[var(--panel-width-compact)]")}
-            style={{ background: theme.node.panel, color: theme.node.text }}
+            style={{
+                background: theme.node.panel,
+                color: theme.node.text,
+                "--canvas-model-picker-trigger-width": triggerWidth ? String(triggerWidth) + "px" : undefined,
+            } as CSSProperties}
             role="listbox"
             aria-label={placeholder}
             onKeyDown={handleMenuKeyDown}
@@ -209,7 +225,7 @@ export function ModelPicker({ config, value, onChange, capability, className, fu
                 arrow={false}
                 content={content}
                 classNames={{
-                    root: cn("canvas-model-picker-popover", creationVariant && "creation-model-picker-popover"),
+                    root: cn("canvas-model-picker-popover", creationVariant && "creation-model-picker-popover", popoverClassName),
                     container: cn("canvas-composer-popover-surface", creationVariant && "creation-model-picker-surface"),
                     content: "canvas-composer-popover-content",
                 }}
@@ -380,48 +396,6 @@ function pickerModelOptionLabel(config: AiConfig, model: string, showConfiguredM
     return channel.scope === "system" ? displayName : `${displayName}（${channel.name}）`;
 }
 
-function priceTiersForCurrentSelection(
-    tiers: NonNullable<NonNullable<AiConfig["channels"][number]["modelCosts"]>[number]["logicalPriceTiers"]>,
-	capability: ModelCapability | undefined,
-	config: AiConfig,
-	requirements?: ModelRequirements,
-) {
-    const requested: Record<string, string> = {};
-	if (capability === "video") {
-		const imageCount = (requirements?.input?.imageCount || 0) + (requirements?.input?.characterCount || 0);
-		if (imageCount > 0) requested.imageCount = String(imageCount);
-		const resolution = normalizeTierResolution(config.vquality);
-        if (resolution !== "*") requested.vquality = resolution;
-        const seconds = Math.max(0, Math.floor(Number(config.videoSeconds) || 0));
-        if (seconds > 0) requested.videoSeconds = String(seconds);
-    }
-    if (capability === "image") {
-        if (config.quality && config.quality !== "auto") requested.quality = config.quality.toLowerCase();
-        if (config.size && config.size !== "auto") requested.size = config.size.toLowerCase();
-    }
-    let bestScore = -1;
-    let matched: typeof tiers = [];
-    for (const tier of tiers) {
-		const selector = tier.selector || {};
-		const conditions = Object.entries(selector).filter(([, value]) => value && value !== "*");
-		if (conditions.some(([key, value]) => requested[key] !== value)) continue;
-		const score = conditions.length;
-        if (score > bestScore) {
-            bestScore = score;
-            matched = [tier];
-        } else if (score === bestScore) {
-            matched.push(tier);
-        }
-    }
-    return matched;
-}
-
-function normalizeTierResolution(value: string) {
-    const raw = String(value || "").trim();
-    if (!raw || raw === "*") return "*";
-    return `${normalizeVideoResolution(raw)}p`;
-}
-
 function channelTierPriceSummary(
     visibleTiers: NonNullable<NonNullable<AiConfig["channels"][number]["modelCosts"]>[number]["logicalPriceTiers"]>,
     allTiers: NonNullable<NonNullable<AiConfig["channels"][number]["modelCosts"]>[number]["logicalPriceTiers"]>,
@@ -515,31 +489,6 @@ function ModelPrice({ price, quote, compact = false }: { price: ModelMenuPrice |
             {price.value.toLocaleString("zh-CN", { maximumFractionDigits: compact ? 3 : 6 })}/{price.unit}
         </span>
     );
-}
-
-function modelQuoteRequest(config: AiConfig, value: string, capability?: ModelCapability, requirements?: ModelRequirements): { logicalModelID: string; intent: ModelRequestIntent } | undefined {
-    if (!capability || !value) return undefined;
-    const channel = resolveModelChannel(config, value);
-    if (channel.scope !== "system") return undefined;
-    const cost = channel.modelCosts?.find((item) => item.model === modelOptionName(value));
-    if (!cost?.logicalModelId) return undefined;
-    const input = requirements?.input;
-    const intent: ModelRequestIntent = {
-        capability,
-        operation: requirements?.videoOperation,
-        inputs: {
-            image: (input?.imageCount || 0) + (input?.characterCount || 0),
-            video: input?.videoCount || 0,
-            audio: input?.audioCount || 0,
-        },
-        options: {
-            ...modelRequestOptions(config, capability),
-            ...(requirements?.options || {}),
-            ...(requirements?.videoSeconds ? { videoSeconds: Number(requirements.videoSeconds) } : {}),
-            ...(requirements?.imageSize ? { size: requirements.imageSize } : {}),
-        },
-    };
-    return { logicalModelID: cost.logicalModelId, intent };
 }
 
 function modelMenuMeta(model: string, capability?: ModelCapability): { description: string; time?: string } {

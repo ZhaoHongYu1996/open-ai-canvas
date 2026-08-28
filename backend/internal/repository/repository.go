@@ -503,7 +503,7 @@ func (r *Repository) CancelTaskIfStatus(userID string, id string, expected model
 	result := r.db.Model(&model.Task{}).
 		Where("id = ? AND user_id = ? AND status = ?", id, userID, expected).
 		Updates(map[string]any{
-			"status": model.TaskStatusCancelled, "stage": "任务已取消", "completed_at": &now,
+			"status": model.TaskStatusCancelled, "stage": "任务已取消", "error": "任务已取消", "completed_at": &now,
 			"lease_owner": "", "lease_expires_at": nil, "updated_at": now,
 		})
 	return result.RowsAffected == 1, result.Error
@@ -840,6 +840,61 @@ func (r *Repository) CreateUserOSSSetting(setting *model.UserOSSSetting) error {
 	return r.db.Create(setting).Error
 }
 
+func (r *Repository) StorageLocation(id string) (*model.StorageLocation, error) {
+	var location model.StorageLocation
+	if err := r.db.First(&location, "id = ?", id).Error; err != nil {
+		return nil, err
+	}
+	return &location, nil
+}
+
+func (r *Repository) StorageLocationByDigest(scope string, ownerID string, provider string, digest string) (*model.StorageLocation, error) {
+	var location model.StorageLocation
+	if err := r.db.First(&location, "scope = ? AND owner_id = ? AND provider = ? AND location_digest = ?", scope, ownerID, provider, digest).Error; err != nil {
+		return nil, err
+	}
+	return &location, nil
+}
+
+func (r *Repository) StorageLocationHistoryCount(scope string, ownerID string) (int64, error) {
+	var count int64
+	err := r.db.Model(&model.StorageLocation{}).Where("scope = ? AND owner_id = ?", scope, ownerID).Count(&count).Error
+	return count, err
+}
+
+func (r *Repository) StorageLocationResourceCount(id string) (int64, error) {
+	var count int64
+	err := r.db.Model(&model.Resource{}).Where("storage_setting_id = ?", id).Count(&count).Error
+	return count, err
+}
+
+func (r *Repository) CreateStorageLocation(location *model.StorageLocation) error {
+	return r.db.Create(location).Error
+}
+
+func (r *Repository) SaveStorageLocation(location *model.StorageLocation) error {
+	return r.db.Save(location).Error
+}
+
+func (r *Repository) ActivateStorageLocation(scope string, ownerID string, id string, active bool) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&model.StorageLocation{}).Where("scope = ? AND owner_id = ? AND active = ?", scope, ownerID, true).Update("active", false).Error; err != nil {
+			return err
+		}
+		if !active {
+			return nil
+		}
+		result := tx.Model(&model.StorageLocation{}).Where("id = ? AND scope = ? AND owner_id = ?", id, scope, ownerID).Update("active", true)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return gorm.ErrRecordNotFound
+		}
+		return nil
+	})
+}
+
 func (r *Repository) ReserveDailyUpload(userID string, day string, size int64, limit int64) error {
 	usage := model.UserDailyUploadUsage{ID: userID + ":" + day, UserID: userID, Day: day}
 	return r.db.Transaction(func(tx *gorm.DB) error {
@@ -953,7 +1008,7 @@ func (r *Repository) UpsertAsset(asset *model.Asset) error {
 }
 
 func (r *Repository) DeleteAsset(userID string, id string) error {
-	return r.DeleteAssetAndResources(userID, id, nil)
+	return r.DeleteAssetAndResources(userID, id, nil, nil)
 }
 
 func (r *Repository) ReplaceAssets(userID string, assets []model.Asset) error {
@@ -999,7 +1054,22 @@ func (r *Repository) UpsertCanvasProject(project *model.CanvasProject) error {
 }
 
 func (r *Repository) DeleteCanvasProject(userID string, id string) error {
-	return r.db.Delete(&model.CanvasProject{}, "id = ? AND user_id = ?", id, userID).Error
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("user_id = ? AND project_id = ?", userID, id).Delete(&model.CanvasShare{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("canvas_id = ?", id).Delete(&model.CanvasUnitLink{}).Error; err != nil {
+			return err
+		}
+		// 任务和会话是审计记录，不随独立画布实体保留归属 ID，避免删除后继续挂住画布上下文。
+		if err := tx.Model(&model.Task{}).Where("user_id = ? AND project_id = ?", userID, id).Update("project_id", "").Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&model.Session{}).Where("user_id = ? AND project_id = ?", userID, id).Update("project_id", "").Error; err != nil {
+			return err
+		}
+		return tx.Delete(&model.CanvasProject{}, "id = ? AND user_id = ?", id, userID).Error
+	})
 }
 
 func (r *Repository) Projects(userID string) ([]model.Project, error) {

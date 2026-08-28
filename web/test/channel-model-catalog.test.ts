@@ -5,6 +5,8 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import { CanvasVideoSettingsPopover } from "../src/components/canvas/canvas-video-settings-popover";
+import { VideoSettingsPanel } from "../src/components/video-settings-panel";
+import { canvasThemes } from "../src/lib/canvas-theme";
 import { mergeFetchedChannelModelCosts, type ChannelModelCatalogItem } from "../src/lib/channel-model-catalog";
 import { defaultModelCapabilityConfig } from "../src/lib/model-capabilities";
 import { ChannelModelSettings } from "../src/pages/settings/channel-video-pricing";
@@ -105,36 +107,14 @@ describe("public channel model catalog", () => {
         });
     });
 
-    test("treats endpoint-only video metadata as authoritative without inventing 720P", async () => {
+    test("does not infer a protocol from endpoint-only video metadata", () => {
         const catalog: ChannelModelCatalogItem = {
             id: "endpoint-video",
             supportedEndpointTypes: ["openai-video"],
         };
         const config = configForCatalog([catalog], { videoSeconds: "6", size: "16:9", vquality: "720" });
-        const model = "flow::endpoint-video";
-        const cost = config.channels[0]!.modelCosts![0]!;
 
-        expect(cost.capability).toBe("video");
-        expect(cost.protocol).toBe("newapi-channel-2");
-        expect(cost.capabilityConfig?.video?.resolutions).toEqual([]);
-        expect(cost.capabilityConfig?.video?.defaultResolution).toBe("");
-        expect(selectableModelsByCapability(config, "video")).toEqual([model]);
-        expect(resolveModelRequestConfig(config, model).interfaceType).toBe("newapi-channel-2");
-
-        const canvasHtml = renderToStaticMarkup(React.createElement(CanvasVideoSettingsPopover, { config, onConfigChange: () => undefined }));
-        expect(canvasHtml).not.toContain("720P");
-
-        const createSource = await Bun.file(new URL("../src/pages/create/index.tsx", import.meta.url)).text();
-        expect(createSource).toContain('const videoResolutionSupported = props.mode === "video" && resolutions.length > 0;');
-        expect(createSource).toContain("...(videoResolutionSupported ? [videoResolutionLabel(props.videoQuality)] : [])");
-
-        let requestBody: Record<string, unknown> = {};
-        axios.post = (async (_url: string, body: Record<string, unknown>) => {
-            requestBody = body;
-            return { data: { id: "endpoint-video-task" } };
-        }) as typeof axios.post;
-        await createVideoGenerationTask(config, "synthetic prompt");
-        expect(requestBody).not.toHaveProperty("resolution");
+        expect(config.channels[0]!.modelCosts).toEqual([]);
     });
 
     test("preserves a manually configured capability profile when a catalog only returns an ID", () => {
@@ -259,7 +239,7 @@ describe("public channel model catalog", () => {
 
         const html = renderToStaticMarkup(React.createElement(CanvasVideoSettingsPopover, { config, onConfigChange: () => undefined }));
 
-        expect(html).toContain("横屏 · 10s");
+        expect(html).toContain("16:9 · 10s");
         expect(html).not.toContain("720P");
     });
 
@@ -290,11 +270,7 @@ describe("public channel model catalog", () => {
         const normalized = normalizeConfigSnapshot({
             config: {
                 ...defaultConfig,
-                channels: [
-                    platform,
-                    custom,
-                    createModelChannel({ id: "default", name: "默认渠道", apiKey: "", models: ["gpt-image-2"] }),
-                ],
+                channels: [platform, custom, createModelChannel({ id: "default", name: "默认渠道", apiKey: "", models: ["gpt-image-2"] })],
                 models: ["default::gpt-image-2", "ghost-image"],
                 imageModels: ["default::gpt-image-2", "ghost-image"],
                 imageModel: "default::gpt-image-2",
@@ -302,10 +278,7 @@ describe("public channel model catalog", () => {
         }).config;
         const staleSnapshot = { ...normalized, models: [...normalized.models, "ghost-image"], imageModels: [...normalized.imageModels, "ghost-image"] };
 
-        expect(selectableModelsByCapability(staleSnapshot, "image")).toEqual([
-            "public-logical-models::frontend-image",
-            "custom-channel::custom-image-v1",
-        ]);
+        expect(selectableModelsByCapability(staleSnapshot, "image")).toEqual(["public-logical-models::frontend-image", "custom-channel::custom-image-v1"]);
         expect(staleSnapshot.channels.some((channel) => channel.id === "default")).toBe(false);
         expect(selectableModelsByCapability(staleSnapshot, "image")).not.toContain("default::gpt-image-2");
         expect(selectableModelsByCapability(staleSnapshot, "image")).not.toContain("ghost-image");
@@ -356,5 +329,33 @@ describe("public channel model catalog", () => {
         expect(body.model).toBe("veo-public");
         expect(body.seconds).toBe("8");
         expect(body.size).toBe("1280x720");
+    });
+
+    test("preserves provider resolution enums with direction suffixes across Canvas display and requests", async () => {
+        let body: Record<string, string> = {};
+        axios.post = (async (_url: string, requestBody: unknown) => {
+            body = formEntries(requestBody);
+            return { data: { id: "synthetic-directional" } };
+        }) as typeof axios.post;
+        const catalog: ChannelModelCatalogItem = {
+            ...omniCatalog,
+            id: "directional-video",
+            displayName: "Directional Video",
+            defaultParameters: { aspectRatio: "16:9", durationSeconds: "8", resolution: "768p竖" },
+            options: {
+                ...omniCatalog.options,
+                durationSeconds: [{ value: "8" }],
+                resolution: [{ value: "480p竖" }, { value: "768p竖" }, { value: "480p横" }, { value: "768p横" }],
+            },
+        };
+        const config = configForCatalog([catalog], { videoSeconds: "8", size: "16:9", vquality: "768P竖" });
+
+        const html = renderToStaticMarkup(React.createElement(CanvasVideoSettingsPopover, { config, onConfigChange: () => undefined }));
+        const panelHtml = renderToStaticMarkup(React.createElement(VideoSettingsPanel, { config, onConfigChange: () => undefined, theme: canvasThemes.dark }));
+        await createVideoGenerationTask(config, "synthetic prompt");
+
+        expect(html).toContain("768P竖 · 16:9 · 8s");
+        expect(panelHtml).toMatch(/aria-pressed="true"[^>]*>768P竖<\/button>/);
+        expect(body.resolution_name).toBe("768p竖");
     });
 });

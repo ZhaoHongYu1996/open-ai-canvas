@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
-import { ArrowUp, AtSign, Boxes, ChevronDown, FileText, ImageIcon, ImagePlus, Maximize2, Music2, Pencil, SlidersHorizontal, UserRound, Video } from "lucide-react";
+import { ArrowUp, AtSign, Boxes, ChevronDown, FileText, ImageIcon, ImagePlus, LoaderCircle, Maximize2, Music2, Pencil, SlidersHorizontal, UserRound, Video, WandSparkles, X } from "lucide-react";
 import { Button, Image as AntImage, InputNumber, Modal, Tooltip } from "antd";
 
 import { ModelPicker } from "@/components/model-picker";
@@ -7,6 +7,7 @@ import { defaultConfig, modelOptionName, resolveModelChannel, useEffectiveConfig
 import { resolveCanvasGenerationModel } from "@/lib/canvas/canvas-project-generation";
 import { CreditSymbol, requestCreditCost } from "@/constant/credits";
 import { canvasThemes } from "@/lib/canvas-theme";
+import { modelQuoteRequest } from "@/lib/model-pricing";
 import { normalizeVideoDuration, normalizeVideoResolution } from "@/lib/video-generation-options";
 import { modelRequestOptions, resolveCompatibleModel, resolveModelGenerationDefaults, defaultImageParamsForModel, type ModelRequirements } from "@/lib/model-selection";
 import { navigateToSettings } from "@/lib/settings-navigation";
@@ -19,8 +20,14 @@ import { CanvasVideoSettingsPopover } from "./canvas-video-settings-popover";
 import { CanvasVideoPromptTools } from "./canvas-video-prompt-tools";
 import { CanvasPresetPicker, type CanvasPromptPreset } from "./canvas-preset-picker";
 import { CanvasPortraitTexturePopover } from "./canvas-portrait-texture-popover";
+import { CanvasPromptOptimizerDrawer } from "./canvas-prompt-optimizer-drawer";
 import { CanvasNodeType, type CanvasGenerationMode, type CanvasNodeData, type CanvasNodeMetadata, type CanvasWorkspaceMode } from "@/types/canvas";
-import { canvasResourceMentionToken, type CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
+import { canvasResourceMentionToken, normalizeCanvasNodeMentionTokens, type CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
+import { promptOptimizerPlugin, PROMPT_OPTIMIZER_PLUGIN_ID } from "@/lib/plugins/builtin/prompt-optimizer";
+import { createPluginHostContext } from "@/services/plugin-host";
+import { usePluginStore } from "@/stores/use-plugin-store";
+import { useResolvedCanvasResourceReferences } from "./use-resolved-canvas-resource-references";
+import { quoteLogicalModel } from "@/services/api/logical-models";
 
 export type CanvasNodeGenerationMode = CanvasGenerationMode;
 
@@ -31,6 +38,9 @@ type CanvasNodePromptPanelProps = {
     onConfigChange: (nodeId: string, patch: Partial<CanvasNodeMetadata>) => void;
     onGenerate: (nodeId: string, mode: CanvasNodeGenerationMode, prompt: string) => void;
     mentionReferences?: CanvasResourceReference[];
+    onRemoveReference?: (nodeId: string, reference: CanvasResourceReference) => void;
+    onClose?: () => void;
+    onNodeMouseDown?: (event: ReactPointerEvent, nodeId: string) => void;
     onImageSettingsOpenChange?: (open: boolean) => void;
     workspaceMode?: CanvasWorkspaceMode;
 };
@@ -46,11 +56,13 @@ const PROMPT_EDITOR_VERTICAL_PADDING = 12;
 const PROMPT_EDITOR_EXPANDED_VERTICAL_PADDING = 20;
 const PROMPT_EDITOR_MAX_LINES = 8;
 
-export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfigChange, onGenerate, mentionReferences = [], onImageSettingsOpenChange, workspaceMode = "professional" }: CanvasNodePromptPanelProps) {
+export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfigChange, onGenerate, mentionReferences = [], onRemoveReference, onClose, onNodeMouseDown, onImageSettingsOpenChange, workspaceMode = "professional" }: CanvasNodePromptPanelProps) {
     const globalConfig = useEffectiveConfig();
     const themeName = useThemeStore((state) => state.theme);
     const theme = canvasThemes[themeName];
     const creditsEnabled = useUserStore((state) => state.features.creditsEnabled);
+    const promptOptimizerInstallation = usePluginStore((state) => state.installations.find((item) => item.manifest.id === PROMPT_OPTIMIZER_PLUGIN_ID));
+    const promptOptimizerEnabled = usePluginStore((state) => state.pluginStates[PROMPT_OPTIMIZER_PLUGIN_ID]?.effectiveEnabled ?? Boolean(state.installations.find((item) => item.manifest.id === PROMPT_OPTIMIZER_PLUGIN_ID)?.enabled));
     const simpleMode = workspaceMode === "simple";
     const mode = defaultMode(node.type);
     const hasTextContent = node.type === CanvasNodeType.Text && Boolean(node.metadata?.content?.trim());
@@ -65,7 +77,10 @@ export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfi
     const [manualPromptHeight, setManualPromptHeight] = useState<number | null>(null);
     const [manualExpandedPromptHeight, setManualExpandedPromptHeight] = useState<number | null>(null);
     const [paramsExpanded, setParamsExpanded] = useState(false); // #98 决策2：B区参数区折叠状态（手风琴）
-    const activeReferences = mentionReferences.filter((item) => item.active && item.kind !== "skill");
+    const [promptOptimizerOpen, setPromptOptimizerOpen] = useState(false);
+    const resolvedMentionReferences = useResolvedCanvasResourceReferences(mentionReferences);
+    const normalizedSavedPrompt = useMemo(() => normalizeCanvasNodeMentionTokens(savedPrompt, mentionReferences), [mentionReferences, savedPrompt]);
+    const activeReferences = resolvedMentionReferences.filter((item) => item.active && item.kind !== "skill");
     const requirements: ModelRequirements = {
         capability: mode,
         input: {
@@ -92,17 +107,28 @@ export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfi
         }, mode),
     };
     const config = buildNodeConfig(globalConfig, node, mode, requirements);
+    const promptOptimizerProvider = useMemo(() => {
+        if (!promptOptimizerEnabled || !promptOptimizerInstallation || !promptOptimizerPlugin.createPromptOptimizer) return null;
+        return promptOptimizerPlugin.createPromptOptimizer(createPluginHostContext(promptOptimizerPlugin, promptOptimizerInstallation, globalConfig));
+    }, [globalConfig, promptOptimizerEnabled, promptOptimizerInstallation]);
     const generationCount = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)));
     const priceChannel = resolveModelChannel(config, config.model);
-    const credits = requestCreditCost({
+    const configuredCredits = requestCreditCost({
         channelMode: priceChannel.scope === "system" ? "remote" : "local",
         modelCosts: priceChannel.modelCosts,
         model: modelOptionName(config.model),
         count: mode === "image" ? generationCount : 1,
         seconds: mode === "video" ? config.videoSeconds : 1,
+        capability: mode,
+        config,
+        requirements,
     });
+    const quoteRequest = modelQuoteRequest(config, config.model, mode, requirements);
+    const quoteRequestKey = JSON.stringify(quoteRequest || null);
+    const [quotedCredits, setQuotedCredits] = useState<number | null>(null);
+    const credits = quotedCredits ?? configuredCredits;
     const activeReferenceCount = activeReferences.length;
-    const videoFrameOptions = mentionReferences.filter((item) => item.active && item.kind === "image").map((item) => ({ nodeId: item.nodeId, label: item.label, title: item.title, previewUrl: item.previewUrl }));
+    const videoFrameOptions = resolvedMentionReferences.filter((item) => item.active && item.kind === "image").map((item) => ({ nodeId: item.nodeId, label: item.label, title: item.title, previewUrl: item.previewUrl }));
     const hasVideoPromptTools = mode === "video" && !simpleMode && videoFrameOptions.length > 0;
     const monochromeAccent = theme.node.activeStroke;
     const composerTokens = {
@@ -125,22 +151,41 @@ export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfi
     const expandedComposerHeight = clampPromptHeight(manualExpandedPromptHeight ?? expandedPromptContentHeight + (activeReferenceCount ? PROMPT_REFERENCE_SHELF_HEIGHT : 0), expandedPromptBounds);
     const isSubmitDisabled = !isRunning && !prompt.trim();
     const canExpandPrompt = mode === "image" || mode === "video";
+    const canOptimizePrompt = Boolean(promptOptimizerProvider) && canExpandPrompt;
     const isPortraitTexture = mode === "image" && Boolean(node.metadata?.portraitTexture);
 
     useEffect(() => {
-        setPrompt(node.metadata?.composerContent ?? node.metadata?.prompt ?? "");
-    }, [node.id, node.metadata?.composerContent, node.metadata?.prompt]);
+        setPrompt(normalizedSavedPrompt);
+        if (normalizedSavedPrompt !== savedPrompt) onPromptChange(node.id, normalizedSavedPrompt);
+    }, [node.id, normalizedSavedPrompt, onPromptChange, savedPrompt]);
 
     useEffect(() => {
         setExpandedPromptOpen(false);
         setExpandedPresetOpen(false);
-        setPromptContentHeight(estimatePromptContentHeight(savedPrompt, false));
-        setExpandedPromptContentHeight(estimatePromptContentHeight(savedPrompt, true));
+        setPromptContentHeight(estimatePromptContentHeight(normalizedSavedPrompt, false));
+        setExpandedPromptContentHeight(estimatePromptContentHeight(normalizedSavedPrompt, true));
         setManualPromptHeight(null);
         setManualExpandedPromptHeight(null);
     }, [node.id]);
 
-    const skillReferences = useMemo(() => mentionReferences.filter((item) => item.kind === "skill"), [mentionReferences]);
+    useEffect(() => {
+        if (!creditsEnabled || !quoteRequest) {
+            setQuotedCredits(null);
+            return;
+        }
+        const controller = new AbortController();
+        setQuotedCredits(null);
+        quoteLogicalModel(quoteRequest.logicalModelID, quoteRequest.intent, controller.signal)
+            .then(({ quote }) => setQuotedCredits(quote.amountMicrocredits / 1_000_000))
+            .catch(() => {
+                if (!controller.signal.aborted) setQuotedCredits(null);
+            });
+        return () => controller.abort();
+        // quoteRequestKey captures the full normalized request without retriggering on object identity.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [creditsEnabled, quoteRequestKey]);
+
+    const skillReferences = useMemo(() => resolvedMentionReferences.filter((item) => item.kind === "skill"), [resolvedMentionReferences]);
 
     const updatePrompt = (value: string) => {
         setPrompt(value);
@@ -183,7 +228,15 @@ export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfi
     };
 
     const renderComposerHeader = (expanded: boolean) => (
-        <div className="canvas-node-composer-header">
+        <div
+            className="canvas-node-composer-header cursor-grab select-none active:cursor-grabbing"
+            data-canvas-node-drag-handle
+            title="拖动节点"
+            onPointerDown={(event) => {
+                const target = event.target instanceof Element ? event.target : null;
+                if (!target?.closest("button, input, textarea, select, a, [contenteditable=\"true\"], [data-canvas-no-drag]")) onNodeMouseDown?.(event, node.id);
+            }}
+        >
             {isPortraitTexture ? (
                 <CanvasPortraitTexturePopover value={node.metadata?.portraitTexture} placement={expanded ? "topRight" : "topLeft"} onChange={(portraitTexture) => onConfigChange(node.id, { portraitTexture })} />
             ) : (
@@ -195,6 +248,20 @@ export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfi
                 </div>
             )}
             {!simpleMode ? <CanvasPresetPicker mode={mode} skillReferences={skillReferences} open={expanded ? expandedPresetOpen : presetOpen} onOpenChange={expanded ? setExpandedPresetOpen : setPresetOpen} onSelect={applyPreset} dense /> : null}
+            {canOptimizePrompt ? (
+                <Tooltip title="用 AI 优化提示词">
+                    <button
+                        type="button"
+                        className="canvas-node-composer-icon-button inline-flex h-6 shrink-0 items-center gap-1 rounded-md px-1.5 transition-[background-color,filter] hover:brightness-125 focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1 motion-reduce:hover:translate-y-0"
+                        style={{ background: controlSurface, color: theme.node.text, outlineColor: monochromeAccent }}
+                        onClick={() => setPromptOptimizerOpen(true)}
+                        aria-label="优化提示词"
+                    >
+                        <WandSparkles className="size-3" />
+                        <span className="hidden text-[var(--fs-micro)] font-medium sm:inline">优化</span>
+                    </button>
+                </Tooltip>
+            ) : null}
             <div className="ml-auto flex shrink-0 items-center justify-end gap-1">
                 {activeReferenceCount ? <ComposerPill theme={theme} icon={<Boxes className="size-2.5" />} label={`参考 ${activeReferenceCount}`} /> : null}
                 {!expanded && canExpandPrompt ? (
@@ -210,23 +277,36 @@ export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfi
                         </button>
                     </Tooltip>
                 ) : null}
+                {!expanded && onClose ? (
+                    <Tooltip title="关闭">
+                        <button
+                            type="button"
+                            className="canvas-node-composer-icon-button grid size-6 shrink-0 place-items-center rounded-md transition-[background-color,filter] hover:brightness-125 focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1 motion-reduce:hover:translate-y-0"
+                            style={{ background: controlSurface, color: theme.node.text, outlineColor: monochromeAccent }}
+                            onClick={onClose}
+                            aria-label="关闭创作面板"
+                        >
+                            <X className="size-3" />
+                        </button>
+                    </Tooltip>
+                ) : null}
             </div>
         </div>
     );
 
     const renderSubmitButton = (expanded: boolean) => {
         const showCost = creditsEnabled && credits !== null;
-        const formattedCredits = credits?.toLocaleString();
+        const formattedCredits = credits?.toLocaleString("zh-CN", { maximumFractionDigits: 6 });
         const actionLabel = isRunning ? "生成中" : showCost ? `预计消耗 ${formattedCredits} 积分，生成` : "生成";
         return (
             <Button
                 type="text"
-                className={`canvas-node-composer-submit ${showCost ? "has-cost" : ""}`}
+                className={`canvas-node-composer-submit canvas-node-composer-submit-canvas ${showCost ? "has-cost" : ""}`}
                 disabled={isRunning || isSubmitDisabled}
                 style={
                     {
                         color: isSubmitDisabled ? theme.node.faint : theme.node.text,
-                        "--canvas-composer-submit-action": isSubmitDisabled ? theme.toolbar.itemHover : isRunning ? theme.accent.danger : monochromeAccent,
+                        "--canvas-composer-submit-action": isSubmitDisabled ? theme.toolbar.itemHover : monochromeAccent,
                         "--canvas-composer-submit-action-fg": isSubmitDisabled ? theme.node.faint : theme.canvas.background,
                     } as CSSProperties
                 }
@@ -241,7 +321,7 @@ export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfi
                     </span>
                 ) : null}
                 <span className="canvas-node-composer-submit-action" aria-hidden>
-                    {isRunning ? <span className="size-2.5 animate-pulse" aria-hidden="true" /> : <ArrowUp className="size-3" />}
+                    {isRunning ? <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" /> : <ArrowUp className="size-3.5" strokeWidth={2.4} />}
                 </span>
             </Button>
         );
@@ -318,10 +398,10 @@ export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfi
         return (
             <>
                 <div className="canvas-node-composer-editor" style={{ height }}>
-                    <ConnectedReferenceShelf references={mentionReferences} theme={theme} onInsert={insertPromptReference} />
+                    <ConnectedReferenceShelf references={resolvedMentionReferences} theme={theme} onInsert={insertPromptReference} onRemove={(reference) => onRemoveReference?.(node.id, reference)} />
                     <CanvasResourceMentionTextarea
                         value={prompt}
-                        references={mentionReferences}
+                        references={resolvedMentionReferences}
                         includeAssetLibrary
                         onChange={updatePrompt}
                         onContentSizeChange={expanded ? setExpandedPromptContentHeight : setPromptContentHeight}
@@ -345,13 +425,26 @@ export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfi
     };
 
     return (
-        <div
-            className="canvas-node-composer"
-            style={composerSurfaceStyle}
-            onMouseDown={(event) => event.stopPropagation()}
-            onPointerDown={(event) => event.stopPropagation()}
-            onWheel={(event) => event.stopPropagation()}
+        <CanvasPromptOptimizerDrawer
+            open={promptOptimizerOpen}
+            prompt={prompt}
+            generationMode={mode === "image" || mode === "video" ? mode : "image"}
+            targetModel={modelOptionName(config.model) || config.model}
+            targetProtocol={priceChannel.modelCosts?.find((item) => item.model === modelOptionName(config.model))?.protocol || priceChannel.interfaceType}
+            config={globalConfig}
+            optimizerModel={globalConfig.textModel}
+            references={activeReferences}
+            provider={promptOptimizerProvider}
+            onClose={() => setPromptOptimizerOpen(false)}
+            onApply={(nextPrompt) => updatePrompt(nextPrompt)}
         >
+            <div
+                className="canvas-node-composer"
+                style={composerSurfaceStyle}
+                onMouseDown={(event) => event.stopPropagation()}
+                onPointerDown={(event) => event.stopPropagation()}
+                onWheel={(event) => event.stopPropagation()}
+            >
             {renderComposerHeader(false)}
 
             {renderPromptEditor(false)}
@@ -409,7 +502,9 @@ export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfi
                     <div className="shrink-0">{renderComposerControls(true)}</div>
                 </div>
             </Modal>
-        </div>
+
+            </div>
+        </CanvasPromptOptimizerDrawer>
     );
 }
 
@@ -436,7 +531,7 @@ function modeDisplayName(mode: CanvasNodeGenerationMode) {
     return "文本";
 }
 
-function ConnectedReferenceShelf({ references, theme, onInsert }: { references: CanvasResourceReference[]; theme: CanvasTheme; onInsert: (reference: CanvasResourceReference) => void }) {
+function ConnectedReferenceShelf({ references, theme, onInsert, onRemove }: { references: CanvasResourceReference[]; theme: CanvasTheme; onInsert: (reference: CanvasResourceReference) => void; onRemove?: (reference: CanvasResourceReference) => void }) {
     const activeReferences = references.filter((item) => item.active && item.kind !== "skill");
     const [imagePreview, setImagePreview] = useState<CanvasResourceReference | null>(null);
     if (!activeReferences.length) return null;
@@ -462,6 +557,22 @@ function ConnectedReferenceShelf({ references, theme, onInsert }: { references: 
                                 <AtSign className="size-2.5" />
                                 <span>{reference.label}</span>
                             </button>
+                            {onRemove ? (
+                                <button
+                                    type="button"
+                                    className="canvas-node-reference-remove"
+                                    style={{ background: theme.toolbar.panel, borderColor: theme.node.stroke, color: theme.node.text }}
+                                    title="移除参考并删除连接"
+                                    aria-label={`移除参考 ${reference.label}`}
+                                    onClick={(event) => {
+                                        event.stopPropagation();
+                                        onRemove(reference);
+                                    }}
+                                    onPointerDown={(event) => event.stopPropagation()}
+                                >
+                                    <X className="size-3" />
+                                </button>
+                            ) : null}
                         </span>
                     );
                 })}

@@ -1,4 +1,5 @@
 import { defaultImageCapabilityConfig, modelCapabilityConfigFor, normalizeImageValue, normalizeVideoValue, STANDARD_IMAGE_SIZE_VALUES, videoDurationAllowed, type ImageCapabilityConfig } from "@/lib/model-capabilities";
+import { videoResolutionComparisonKey } from "@/lib/video-generation-options";
 import { modelOptionName, resolveModelChannel, selectableModelsByCapability, type AiConfig, type ModelCapability } from "@/stores/use-config-store";
 
 export type ModelInputSummary = {
@@ -160,12 +161,7 @@ function logicalOptionMatches(name: string, constraint: { values?: unknown[]; mi
 function normalizeLogicalOptionValue(name: string, value: unknown) {
     const normalized = String(value).trim().toLowerCase();
     if (name !== "vquality" && name !== "resolution") return normalized;
-    if (normalized === "low") return "480p";
-    if (["auto", "medium", "high"].includes(normalized)) return "720p";
-    if (normalized === "2k") return "1440p";
-    if (normalized === "4k") return "2160p";
-    const resolution = normalized.replace(/p$/i, "");
-    return resolution ? `${resolution}p` : "";
+    return videoResolutionComparisonKey(normalized);
 }
 
 function logicalOptionError(name: string) {
@@ -250,7 +246,11 @@ export function resolveModelGenerationDefaults(
     const channel = resolveModelChannel(config, model);
     const cost = channel.modelCosts?.find((item) => item.model === modelOptionName(model));
     const isManagedModel = Boolean(cost?.logicalModelId || cost?.logicalCapabilitySpec);
-    const source = (key: keyof ModelGenerationDefaults) => explicit[key] ?? (isManagedModel ? undefined : fallback[key]);
+    // A channel model capability profile is an explicit per-model contract too.
+    // The persisted global values are legacy defaults and must not override a
+    // model's configured duration, ratio, or resolution on a new canvas node.
+    const hasModelCapabilityProfile = Boolean(cost?.capabilityConfig);
+    const source = (key: keyof ModelGenerationDefaults) => explicit[key] ?? (isManagedModel || hasModelCapabilityProfile ? undefined : fallback[key]);
     const profile = modelCapabilityConfigFor(config, model);
 
     if (capability === "image" && profile.image) {

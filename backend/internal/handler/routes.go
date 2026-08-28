@@ -43,6 +43,8 @@ func RegisterTaskRoutes(r *gin.RouterGroup, svc *service.Service) {
 			fail(c, http.StatusBadRequest, err)
 			return
 		}
+		req.TraceID = TraceID(c)
+		req.RequestID = RequestID(c)
 		task, err := svc.CreateTask(user.ID, req)
 		if err != nil {
 			fail(c, http.StatusBadRequest, err)
@@ -232,6 +234,10 @@ func streamTaskTextEvents(c *gin.Context, svc *service.Service, userID string, t
 		return
 	}
 	c.Writer.Flush()
+	lastStatus := replay.Status
+	lastStage := replay.Stage
+	lastProgress := replay.Progress
+	writeTaskTextSSE(c, "progress", 0, map[string]any{"status": replay.Status, "stage": replay.Stage, "progress": replay.Progress})
 
 	pollTicker := time.NewTicker(750 * time.Millisecond)
 	heartbeatTicker := time.NewTicker(15 * time.Second)
@@ -260,6 +266,10 @@ func streamTaskTextEvents(c *gin.Context, svc *service.Service, userID string, t
 		if err != nil {
 			writeTaskTextSSE(c, "error", 0, map[string]string{"message": "任务文本流不可用"})
 			return
+		}
+		if next.Status != lastStatus || next.Stage != lastStage || next.Progress != lastProgress {
+			writeTaskTextSSE(c, "progress", 0, map[string]any{"status": next.Status, "stage": next.Stage, "progress": next.Progress})
+			lastStatus, lastStage, lastProgress = next.Status, next.Stage, next.Progress
 		}
 		replay = next
 	}
@@ -294,6 +304,8 @@ func RegisterSessionRoutes(r *gin.RouterGroup, svc *service.Service) {
 			fail(c, http.StatusBadRequest, err)
 			return
 		}
+		req.TraceID = TraceID(c)
+		req.RequestID = RequestID(c)
 		detail, err := svc.CreateSession(user.ID, req)
 		if err != nil {
 			fail(c, http.StatusBadRequest, err)

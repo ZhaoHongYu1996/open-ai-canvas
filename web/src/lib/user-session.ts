@@ -8,12 +8,13 @@ import { ASSET_STORE_KEY, flushAssetStorePersistence, useAssetStore } from "@/st
 import { CONFIG_STORE_KEY, PUBLIC_MODEL_CATALOG_ID, defaultConfig, normalizeConfigSnapshot, useConfigStore, type ModelCapability, type ModelChannel } from "@/stores/use-config-store";
 import { defaultModelCapabilityConfig, STANDARD_IMAGE_SIZE_VALUES, type ModelCapabilityConfig } from "@/lib/model-capabilities";
 import { useUserStore } from "@/stores/use-user-store";
-import { installRemoteUserDataAutoSync, resetRemoteUserDataSync, syncRemoteUserData, withRemoteUserDataSyncPaused } from "@/services/user-data-sync";
+import { PLUGIN_STORE_KEY, usePluginStore } from "@/stores/use-plugin-store";
+import { installRemoteUserDataAutoSync, resetRemoteUserDataSync, syncRemoteUserData, withRemoteUserDataSyncExclusive } from "@/services/user-data-sync";
 import { withGenerationConsumersPaused } from "@/services/generation-consumer-lifecycle";
 
 export async function switchUserStorageScope(userId?: string | null) {
     await withGenerationConsumersPaused(async () => {
-        await withRemoteUserDataSyncPaused(async () => {
+        await withRemoteUserDataSyncExclusive(async () => {
             await Promise.all([flushCanvasStorePersistence(), flushAssetStorePersistence()]);
             resetRemoteUserDataSync();
             setActiveUserScope(userId);
@@ -29,16 +30,18 @@ export async function applyUserSession(payload: AuthSessionPayload) {
         // Query key 不携带用户 ID；身份变化时必须取消并清空旧账号请求，避免跨账号复用内存数据。
         if (previousUserId !== nextUserId) appQueryClient.clear();
         await switchUserStorageScope(payload.user?.id);
-        const [persistedCanvas, persistedAssets] = await Promise.all([localForageStorage.getItem(CANVAS_STORE_KEY), localForageStorage.getItem(ASSET_STORE_KEY)]);
+        const [persistedCanvas, persistedAssets, persistedPlugins] = await Promise.all([localForageStorage.getItem(CANVAS_STORE_KEY), localForageStorage.getItem(ASSET_STORE_KEY), localForageStorage.getItem(PLUGIN_STORE_KEY)]);
         const persistedConfig = scopedLocalStorage.getItem(CONFIG_STORE_KEY);
+        usePluginStore.setState({ hydrated: false, runtimeStatuses: {}, pluginStates: {} });
         useUserStore.getState().setUser(payload.user);
         useUserStore.getState().setRuntimeLimits(payload.runtimeLimits);
         useUserStore.getState().setDrawingEngine(payload.drawingEngine);
         useUserStore.getState().setFeatures(payload.features);
-        await Promise.all([useCanvasStore.persist.rehydrate(), useAssetStore.persist.rehydrate(), useConfigStore.persist.rehydrate()]);
+        await Promise.all([useCanvasStore.persist.rehydrate(), useAssetStore.persist.rehydrate(), useConfigStore.persist.rehydrate(), usePluginStore.persist.rehydrate()]);
         // Zustand 在目标 scope 没有快照时会保留旧内存，必须显式恢复该 scope 的空状态。
         if (!persistedCanvas) useCanvasStore.setState({ projects: [] });
         if (!persistedAssets) useAssetStore.setState({ assets: [] });
+        if (!persistedPlugins) usePluginStore.setState({ installations: [], runtimeStatuses: {}, pluginStates: {} });
         if (!persistedConfig) {
             // 只有首次配置缺失时才生成能力推荐；已有配置中的空数组代表用户明确清空。
             // 使用统一模型目录接口
@@ -69,8 +72,9 @@ export async function applyUserSession(payload: AuthSessionPayload) {
         }
         installRemoteUserDataAutoSync();
         if (payload.user?.id) {
-            // 认证状态先完成，云端数据在后台合并；远端同步失败不能伪装成登录失败。
-            void syncRemoteUserData(payload.user.id).catch((error) => console.warn("登录后云端数据同步失败，保留本地数据等待重试", error));
+            // 登录后的服务端快照是实体基线；基线完成前不开放工作区写操作。
+            // 拉取失败时保留本地缓存供只读降级，但远端写入口会明确拒绝，不能把旧缓存上传成真相。
+            await syncRemoteUserData(payload.user.id).catch((error) => console.warn("登录后云端数据基线建立失败，已停止远端写入", error));
         } else resetRemoteUserDataSync();
     } finally {
         useUserStore.getState().setHydrated(true);
@@ -167,7 +171,7 @@ function systemChannelModelChannels(channels: PublicChannelCatalog[]): ModelChan
                     model: model.modelKey,
                     displayName: model.displayName,
                     description: "",
-                    icon: "",
+                    icon: model.icon || "",
                     capability: model.capability as ModelCapability,
                     protocol: model.protocol as any,
                     pricePolicy: "channel" as const,

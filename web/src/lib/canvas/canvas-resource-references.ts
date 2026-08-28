@@ -3,7 +3,7 @@ import { getNodeResourceKind } from "@/lib/canvas/node-registry";
 import { seedanceReferenceLabel } from "@/lib/seedance-video";
 import type { Skill } from "@/services/api/skills";
 import type { Asset, AssetCategory } from "@/stores/use-asset-store";
-import { CanvasNodeType, type CanvasConnection, type CanvasNodeData } from "@/types/canvas";
+import { CanvasNodeType, type CanvasConnection, type CanvasNodeData, type CanvasNodeTypeId } from "@/types/canvas";
 
 export type CanvasResourceKind = "image" | "video" | "audio" | "text" | "skill" | "character";
 
@@ -17,16 +17,25 @@ export type CanvasResourceReference = {
     storageKey?: string;
     text?: string;
     active: boolean;
-    sourceType?: CanvasNodeType;
+    sourceType?: CanvasNodeTypeId;
     skill?: Skill;
     assetId?: string;
     category?: AssetCategory;
+    mentionToken?: string;
 };
 
 export function canvasResourceMentionToken(reference: CanvasResourceReference) {
+    if (reference.mentionToken) return reference.mentionToken;
     if (reference.kind === "skill" && reference.skill?.skill_id) return `@[skill:${reference.skill.skill_id}]`;
     if (reference.assetId) return `@[asset:${reference.assetId}]`;
-    return `@[node:${reference.nodeId}]`;
+    return `@${reference.label}`;
+}
+
+export function normalizeCanvasNodeMentionTokens(prompt: string, references: CanvasResourceReference[]) {
+    return references.reduce((value, reference) => {
+        if (!reference.nodeId || reference.assetId || reference.kind === "skill") return value;
+        return value.split(`@[node:${reference.nodeId}]`).join(`@${reference.label}`);
+    }, prompt);
 }
 
 export function buildAssetMentionReferences(assets: Asset[]): CanvasResourceReference[] {
@@ -60,6 +69,10 @@ export function buildCanvasResourceReferences(nodes: CanvasNodeData[], connectio
 
 export function buildNodeMentionReferences(node: CanvasNodeData, nodes: CanvasNodeData[], connections: CanvasConnection[]) {
     return labelResourceNodes(getMentionResourceNodes(node.id, nodes, connections), true);
+}
+
+export function buildOrderedCanvasResourceReferences(nodes: CanvasNodeData[], active = true) {
+    return labelResourceNodes(nodes.filter(isResourceNode), active);
 }
 
 export function getMentionResourceNodes(nodeId: string, nodes: CanvasNodeData[], connections: CanvasConnection[]) {
@@ -124,7 +137,7 @@ function labelResourceNodes(nodes: CanvasNodeData[], active: boolean) {
                 kind,
                 label,
                 title,
-                previewUrl: node.metadata?.workflowKind === "character" ? node.metadata.characterCoverUrl : node.type === CanvasNodeType.Drawing ? node.metadata?.drawingPreviewUrl : mediaPreviewUrl(node.metadata?.content),
+                previewUrl: node.metadata?.workflowKind === "character" ? node.metadata.characterCoverUrl : node.type === CanvasNodeType.Drawing ? node.metadata?.drawingPreviewUrl : node.metadata?.previewContent || mediaPreviewUrl(node.metadata?.content),
                 storageKey: node.metadata?.storageKey,
                 text: node.metadata?.workflowKind === "character" ? node.metadata.characterPrompt : node.type === CanvasNodeType.Text ? node.metadata?.content || node.metadata?.prompt : node.type === CanvasNodeType.Skill ? skillResourceText(node) : undefined,
                 active,
