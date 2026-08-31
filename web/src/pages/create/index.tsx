@@ -43,7 +43,8 @@ import type { PromptOptimizerProvider } from "@/lib/plugins/plugin-types";
 import { promptOptimizerPlugin, PROMPT_OPTIMIZER_PLUGIN_ID } from "@/lib/plugins/builtin/prompt-optimizer";
 import { createPluginHostContext } from "@/services/plugin-host";
 import { usePluginStore } from "@/stores/use-plugin-store";
-import { buildCreationMentionReferences, creationReferenceMetadata, displayCreationPrompt, expandCreationPrompt, reconcileCreationAttachmentLimit, removeCreationReferenceTokens, replaceCreationAttachmentReference, selectedCreationReferences, type CreationReference } from "./creation-references";
+import { buildCreationMentionReferences, displayCreationPrompt, expandCreationPrompt, reconcileCreationAttachmentLimit, removeCreationReferenceTokens, replaceCreationAttachmentReference, selectedCreationReferences, type CreationReference } from "./creation-references";
+import { skillRuntime } from "@/services/skill-runtime";
 import { creationAttachmentFromAsset, creationAttachmentFromAudio, creationAttachmentFromAudioAsset, creationAttachmentFromDocument, creationAttachmentFromExternalAsset, creationAttachmentFromImage, creationAttachmentFromVideo, creationAttachmentFromVideoAsset, creationAttachmentKind, creationAudioAsset, creationFileAccepted, creationImageAsset, creationMediaAspectRatio, creationUploadAccept, creationVideoAsset, removeCreationAttachment, splitCreationAttachments, type CreationAttachment } from "./creation-assets";
 
 type CreationMode = "text" | "image" | "video";
@@ -243,7 +244,7 @@ export default function CreatePage() {
             ratio: videoProfile.defaultRatio,
             resolution: videoProfile.defaultResolution,
         });
-        setSeconds(clampCreationVideoSeconds(videoProfile, normalized.seconds));
+        setSeconds(normalized.seconds);
         setRatio(normalized.ratio);
         setVideoQuality(normalized.resolution.replace(/p$/i, ""));
         const maxReferences = videoProfile.operations.includes("image_to_video") ? videoProfile.references.maxImages : 0;
@@ -386,7 +387,7 @@ export default function CreatePage() {
                 category: asset.category || "other",
                 kindLabel: asset.kind === "video" ? "视频" : asset.kind === "audio" ? "音频" : "图片",
                 asset,
-                searchText: asset.tags.join(" "),
+                searchText: (asset.tags || []).join(" "),
                 disabledReason: mode === "image" && asset.kind !== "image" ? "图片创作仅支持参考图" : undefined,
             })),
         ...externalLibraryItems,
@@ -545,7 +546,7 @@ export default function CreatePage() {
             releaseRetryLock();
             return;
         }
-        const videoSeconds = mode === "video" ? clampCreationVideoSeconds(videoProfile, seconds) : seconds;
+        const videoSeconds = seconds;
         if (mode === "video" && !videoDurationAllowed(videoProfile, Number(videoSeconds))) {
             toast.error("当前模型不支持所选视频时长，请重新选择");
             releaseRetryLock();
@@ -567,8 +568,22 @@ export default function CreatePage() {
             audioCount: referenceAudios.length,
             characterCount: 0,
         });
-        const expandedPrompt = expandCreationPrompt(text, references, attachments);
-        const referenceMetadata = creationReferenceMetadata(references);
+        const skillReferences = references.flatMap((reference) => (reference.skill ? [reference.skill] : []));
+        let skillExecution: Awaited<ReturnType<typeof skillRuntime.prepare<"creation">>>;
+        try {
+            skillExecution = await skillRuntime.prepare({
+                profile: "creation",
+                prompt: expandCreationPrompt(text, references, attachments),
+                skills: skillReferences,
+                selectedSkillIds: skillReferences.map((skill) => skill.skill_id),
+            });
+        } catch (error) {
+            toast.error(error instanceof Error ? error.message : "技能上下文加载失败");
+            releaseRetryLock();
+            return;
+        }
+        const expandedPrompt = skillExecution.prompt;
+        const referenceMetadata = skillExecution.metadata;
         followLatestMessageRef.current = true;
         const userMessage = newMessage("user", text, { mode, model: selectedModel, attachments, references, settings });
         const assistantMessage = newMessage("assistant", "", { mode, model: selectedModel, status: mode === "text" ? "streaming" : "pending", settings, ...retryContext });
@@ -613,7 +628,7 @@ export default function CreatePage() {
             ...(mode === "image"
                 ? { size: normalizedImage?.size || ratio, quality: normalizedImage?.quality || quality, count: normalizedImage?.count || count, videoSeconds: config.videoSeconds }
                 : mode === "video"
-                  ? { size: normalizedVideo?.ratio || ratio, videoSeconds: clampCreationVideoSeconds(videoProfile, normalizedVideo?.seconds || seconds), vquality: (normalizedVideo?.resolution || videoQuality).replace(/p$/i, "") }
+                  ? { size: normalizedVideo?.ratio ?? ratio, videoSeconds: normalizedVideo?.seconds || seconds, vquality: (normalizedVideo?.resolution ?? videoQuality).replace(/p$/i, "") }
                   : {}),
         };
         try {
@@ -1520,9 +1535,10 @@ function GenerationSettingsMenu(props: ComposerProps) {
         ...(props.imageProfile.quality.supported ? [qualityLabel] : []),
         ...(props.imageProfile.maxOutputs > 1 ? [props.count] : []),
     ].join(" · ");
-    const summary = props.mode === "video" ? [props.ratio, ...(videoResolutionSupported ? [videoResolutionLabel(props.videoQuality)] : [])].join(" · ") : imageSummary;
+    const videoRatioSupported = props.mode === "video" && ratios.length > 0;
+    const summary = props.mode === "video" ? [...(videoRatioSupported ? [props.ratio] : []), ...(videoResolutionSupported ? [videoResolutionLabel(props.videoQuality)] : [])].join(" · ") : imageSummary;
     const panel = <div className="creation-parameter-menu">
-        {props.mode === "video" || mergedProfile.size.parameter !== "none" ? <SettingSection title="画幅" value={referenceImageSizeSelected ? referenceImageSizeLabel : props.mode === "image" && usesImageResolutionPicker ? activeImageRatio : props.ratio}><div className="creation-parameter-content"><div className="creation-choice-grid is-ratio">{referenceImageSizeValue ? <button type="button" aria-pressed={referenceImageSizeSelected} aria-label={"使用参考图尺寸 " + referenceImageSizeLabel} title={"使用参考图尺寸 " + referenceImageSizeLabel} className={"creation-reference-size-choice" + (referenceImageSizeSelected ? " is-selected" : "")} onClick={selectReferenceImageSize}><span className="creation-ratio-preview"><span style={ratioPreviewStyle(referenceImageSizeRatio)} /></span><span>参考图</span></button> : null}{ratios.map((value) => { const selected = props.mode === "image" && usesImageResolutionPicker ? value === activeImageRatio : value === props.ratio; return <button key={value} type="button" aria-pressed={selected} className={selected ? "is-selected" : ""} onClick={() => { if (props.mode === "image") selectImageRatio(value); else props.setRatio(value); setCustomRatioOpen(false); }}><span className="creation-ratio-preview"><span style={ratioPreviewStyle(value)} /></span><span>{value}</span></button>; })}</div>{props.mode !== "video" && mergedProfile.size.allowCustom && (customRatioOpen ? <label className="creation-custom-value"><span>宽 x 高</span><input value={props.ratio} onFocus={(event) => event.currentTarget.select()} onChange={(event) => props.setRatio(event.target.value)} placeholder="1920x1080 或 2:1" aria-label="自定义图片尺寸或比例" /></label> : <button type="button" className="creation-custom-trigger" onClick={() => setCustomRatioOpen(true)}><Plus />输入自定义尺寸</button>)}</div></SettingSection> : null}
+        {videoRatioSupported || props.mode !== "video" && mergedProfile.size.parameter !== "none" ? <SettingSection title="画幅" value={referenceImageSizeSelected ? referenceImageSizeLabel : props.mode === "image" && usesImageResolutionPicker ? activeImageRatio : props.ratio}><div className="creation-parameter-content"><div className="creation-choice-grid is-ratio">{referenceImageSizeValue ? <button type="button" aria-pressed={referenceImageSizeSelected} aria-label={"使用参考图尺寸 " + referenceImageSizeLabel} title={"使用参考图尺寸 " + referenceImageSizeLabel} className={"creation-reference-size-choice" + (referenceImageSizeSelected ? " is-selected" : "")} onClick={selectReferenceImageSize}><span className="creation-ratio-preview"><span style={ratioPreviewStyle(referenceImageSizeRatio)} /></span><span>参考图</span></button> : null}{ratios.map((value) => { const selected = props.mode === "image" && usesImageResolutionPicker ? value === activeImageRatio : value === props.ratio; return <button key={value} type="button" aria-pressed={selected} className={selected ? "is-selected" : ""} onClick={() => { if (props.mode === "image") selectImageRatio(value); else props.setRatio(value); setCustomRatioOpen(false); }}><span className="creation-ratio-preview"><span style={ratioPreviewStyle(value)} /></span><span>{value}</span></button>; })}</div>{props.mode !== "video" && mergedProfile.size.allowCustom && (customRatioOpen ? <label className="creation-custom-value"><span>宽 x 高</span><input value={props.ratio} onFocus={(event) => event.currentTarget.select()} onChange={(event) => props.setRatio(event.target.value)} placeholder="1920x1080 或 2:1" aria-label="自定义图片尺寸或比例" /></label> : <button type="button" className="creation-custom-trigger" onClick={() => setCustomRatioOpen(true)}><Plus />输入自定义尺寸</button>)}</div></SettingSection> : null}
         {props.mode === "video" ? (videoResolutionSupported ? <SettingSection title="清晰度" value={videoResolutionLabel(props.videoQuality)}><div className="creation-choice-grid is-resolution">{resolutions.map((option) => <button key={option.value} type="button" aria-pressed={option.value === props.videoQuality} className={option.value === props.videoQuality ? "is-selected" : ""} onClick={() => props.setVideoQuality(option.value)}>{option.label}</button>)}</div></SettingSection> : null) : <>
             {imageResolutionChoiceOptions.length ? <SettingSection title="分辨率" value={activeImageResolutionChoice === "auto" ? "自动" : activeImageResolutionChoice.toUpperCase()}><div className="creation-choice-grid is-resolution">{imageResolutionChoiceOptions.map((choice) => <button key={choice} type="button" aria-pressed={choice === activeImageResolutionChoice} className={choice === activeImageResolutionChoice ? "is-selected" : ""} onClick={() => selectImageResolution(choice)}>{choice === "auto" ? "自动" : choice.toUpperCase()}</button>)}</div></SettingSection> : null}
             {props.imageProfile.quality.supported ? <SettingSection title={activeQualityOptions.some((item) => item.value === "1k" || item.value === "2k") ? "分辨率" : "图片质量"} value={qualityLabel}><div className="creation-choice-grid is-quality">{activeQualityOptions.map((option) => <button key={option.value} type="button" aria-pressed={option.value === props.quality} className={option.value === props.quality ? "is-selected" : ""} onClick={() => props.setQuality(option.value)}><span>{option.label}</span><small>{option.description}</small></button>)}</div></SettingSection> : null}
@@ -1538,28 +1554,13 @@ function SettingSection({ title, value, children }: { title: string; value?: str
     return <section className="creation-parameter-section"><header><h3>{title}</h3>{value ? <span>{value}</span> : null}</header>{children}</section>;
 }
 
-const CREATION_VIDEO_DURATION_MIN = 4;
-const CREATION_VIDEO_DURATION_MAX = 15;
-
-function clampCreationVideoSeconds(profile: VideoCapabilityConfig, seconds: string) {
-    const normalized = Number(normalizeVideoValue(profile, { seconds }).seconds);
-    if (profile.duration.selection === "enum") {
-        const presets = videoDurationOptions(profile).filter((item) => item >= CREATION_VIDEO_DURATION_MIN && item <= CREATION_VIDEO_DURATION_MAX);
-        const values = presets.length ? presets : videoDurationOptions(profile);
-        return String(values.reduce((nearest, option) => Math.abs(option - normalized) < Math.abs(nearest - normalized) ? option : nearest, values[0]));
-    }
-    const min = Math.max(CREATION_VIDEO_DURATION_MIN, profile.duration.min || CREATION_VIDEO_DURATION_MIN);
-    const max = Math.min(CREATION_VIDEO_DURATION_MAX, Math.max(min, profile.duration.max || CREATION_VIDEO_DURATION_MAX));
-    return String(Math.min(max, Math.max(min, normalized)));
-}
-
 function DurationMenu({ profile, seconds, onChange }: { profile: VideoCapabilityConfig; seconds: string; onChange: (value: string) => void }) {
     const [open, setOpen] = useState(false);
-    const value = Number(clampCreationVideoSeconds(profile, seconds));
-    const presets = profile.duration.selection === "enum" ? videoDurationOptions(profile).filter((item) => item >= CREATION_VIDEO_DURATION_MIN && item <= CREATION_VIDEO_DURATION_MAX) : [];
-    const fallbackPreset = presets.length ? presets : [Math.min(CREATION_VIDEO_DURATION_MAX, Math.max(CREATION_VIDEO_DURATION_MIN, profile.duration.default))];
-    const min = profile.duration.selection === "range" ? Math.max(CREATION_VIDEO_DURATION_MIN, profile.duration.min || CREATION_VIDEO_DURATION_MIN) : Math.min(...fallbackPreset);
-    const max = profile.duration.selection === "range" ? Math.min(CREATION_VIDEO_DURATION_MAX, Math.max(min, profile.duration.max || CREATION_VIDEO_DURATION_MAX)) : Math.max(...fallbackPreset);
+    const value = Number(normalizeVideoValue(profile, { seconds }).seconds);
+    const presets = profile.duration.selection === "enum" ? videoDurationOptions(profile) : [];
+    const fallbackPreset = presets.length ? presets : [profile.duration.default];
+    const min = profile.duration.selection === "range" ? profile.duration.min || 1 : Math.min(...fallbackPreset);
+    const max = profile.duration.selection === "range" ? Math.max(min, profile.duration.max || min) : Math.max(...fallbackPreset);
     const step = Math.max(1, profile.duration.step || 1);
     const durationControl = profile.duration.selection === "range" ? <>
         <input className="h-8 w-full" style={{ accentColor: "var(--creation-text)" }} type="range" min={min} max={max} step={step} value={value} aria-label="视频时长（秒）" onChange={(event) => onChange(event.target.value)} />
