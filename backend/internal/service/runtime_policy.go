@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -25,18 +26,19 @@ const (
 )
 
 type RuntimeResourcePolicy struct {
-	ResourceUploadMB int64 `json:"resourceUploadMB"`
-	SessionUploadMB  int64 `json:"sessionUploadMB"`
-	GeneratedFileMB  int64 `json:"generatedFileMB"`
-	DailyUploadMB    int64 `json:"dailyUploadMB"`
-	StoredFileGB     int64 `json:"storedFileGB"`
-	StructuredDataMB int64 `json:"structuredDataMB"`
-	TaskDataGB       int64 `json:"taskDataGB"`
-	AssetCount       int64 `json:"assetCount"`
-	CanvasCount      int64 `json:"canvasCount"`
-	SessionCount     int64 `json:"sessionCount"`
-	TaskCount        int64 `json:"taskCount"`
-	APICallLogCount  int64 `json:"apiCallLogCount"`
+	ResourceUploadMB        int64 `json:"resourceUploadMB"`
+	SessionUploadMB         int64 `json:"sessionUploadMB"`
+	GeneratedFileMB         int64 `json:"generatedFileMB"`
+	DailyUploadMB           int64 `json:"dailyUploadMB"`
+	StoredFileGB            int64 `json:"storedFileGB"`
+	StructuredDataMB        int64 `json:"structuredDataMB"`
+	TaskDataGB              int64 `json:"taskDataGB"`
+	AssetCount              int64 `json:"assetCount"`
+	CanvasCount             int64 `json:"canvasCount"`
+	SessionCount            int64 `json:"sessionCount"`
+	TaskCount               int64 `json:"taskCount"`
+	APICallLogCount         int64 `json:"apiCallLogCount"`
+	RecycleBinRetentionDays int   `json:"recycleBinRetentionDays"`
 }
 
 type RuntimeTaskPolicy struct {
@@ -90,26 +92,28 @@ type PublicRuntimePolicySetting struct {
 }
 
 type PublicRuntimeLimits struct {
-	ActiveTaskLimit  int   `json:"activeTaskLimit"`
-	ResourceUploadMB int64 `json:"resourceUploadMB"`
-	SessionUploadMB  int64 `json:"sessionUploadMB"`
+	ActiveTaskLimit         int   `json:"activeTaskLimit"`
+	ResourceUploadMB        int64 `json:"resourceUploadMB"`
+	SessionUploadMB         int64 `json:"sessionUploadMB"`
+	RecycleBinRetentionDays int   `json:"recycleBinRetentionDays"`
 }
 
 func defaultRuntimePolicy() RuntimePolicySetting {
 	return RuntimePolicySetting{
 		Resource: RuntimeResourcePolicy{
-			ResourceUploadMB: 50,
-			SessionUploadMB:  32,
-			GeneratedFileMB:  64,
-			DailyUploadMB:    200,
-			StoredFileGB:     2,
-			StructuredDataMB: 256,
-			TaskDataGB:       1,
-			AssetCount:       2_000,
-			CanvasCount:      1_000,
-			SessionCount:     1_000,
-			TaskCount:        20_000,
-			APICallLogCount:  100_000,
+			ResourceUploadMB:        50,
+			SessionUploadMB:         32,
+			GeneratedFileMB:         64,
+			DailyUploadMB:           2048,
+			StoredFileGB:            20,
+			StructuredDataMB:        256,
+			TaskDataGB:              1,
+			AssetCount:              2_000,
+			CanvasCount:             1_000,
+			SessionCount:            1_000,
+			TaskCount:               20_000,
+			APICallLogCount:         100_000,
+			RecycleBinRetentionDays: 30,
 		},
 		Task: RuntimeTaskPolicy{
 			WorkerConcurrency:        effectiveChannelConcurrencyLimit(envInt("CANVAS_WORKER_CONCURRENCY", taskWorkerConcurrency)),
@@ -155,6 +159,7 @@ func selfUseRuntimePolicy() RuntimePolicySetting {
 		DailyUploadMB: maxRuntimeDataMB, StoredFileGB: maxRuntimeStorageGB, StructuredDataMB: maxRuntimeDataMB,
 		TaskDataGB: maxRuntimeStorageGB, AssetCount: maxRuntimeCount, CanvasCount: maxRuntimeCount,
 		SessionCount: maxRuntimeCount, TaskCount: maxRuntimeCount, APICallLogCount: maxRuntimeCount,
+		RecycleBinRetentionDays: 0,
 	}
 	value.Task = RuntimeTaskPolicy{
 		WorkerConcurrency: maxRuntimeConcurrency, ChannelConcurrency: maxRuntimeConcurrency, ActiveTaskLimit: maxRuntimeConcurrency,
@@ -183,8 +188,14 @@ func (s *Service) RuntimePolicy() (RuntimePolicySetting, error) {
 }
 
 func (s *Service) runtimeConcurrencySetting() (RuntimeTaskPolicy, error) {
-	policy, err := s.RuntimePolicy()
-	return policy.Task, err
+	s.initReadCaches()
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	return s.concurrencyReadCache.get(ctx, runtimePolicySettingKey, func(ctx context.Context) (RuntimeTaskPolicy, int, error) {
+		reader := &Service{repo: s.repo.WithContext(ctx)}
+		policy, err := reader.RuntimePolicy()
+		return policy.Task, 256, err
+	})
 }
 
 func (s *Service) PublicRuntimeLimits() (*PublicRuntimeLimits, error) {
@@ -194,7 +205,8 @@ func (s *Service) PublicRuntimeLimits() (*PublicRuntimeLimits, error) {
 	}
 	return &PublicRuntimeLimits{
 		ActiveTaskLimit: policy.Task.ActiveTaskLimit, ResourceUploadMB: policy.Resource.ResourceUploadMB,
-		SessionUploadMB: policy.Resource.SessionUploadMB,
+		SessionUploadMB:         policy.Resource.SessionUploadMB,
+		RecycleBinRetentionDays: policy.Resource.RecycleBinRetentionDays,
 	}, nil
 }
 
@@ -238,6 +250,8 @@ func (s *Service) UpdateRuntimePolicySetting(actor *model.User, value RuntimePol
 	if err := s.repo.SaveSystemSetting(&setting); err != nil {
 		return nil, err
 	}
+	s.initReadCaches()
+	s.concurrencyReadCache.clear()
 	if err := s.appendAdminAudit(actor, "runtime_policy.update", "system_setting", runtimePolicySettingKey, "更新资源与请求策略", map[string]any{"before": before, "after": value}); err != nil {
 		return nil, err
 	}
@@ -255,6 +269,8 @@ func (s *Service) ResetRuntimePolicySetting(actor *model.User) (*PublicRuntimePo
 	if err := s.repo.DeleteSystemSetting(runtimePolicySettingKey); err != nil {
 		return nil, err
 	}
+	s.initReadCaches()
+	s.concurrencyReadCache.clear()
 	after := defaultRuntimePolicy()
 	if err := s.appendAdminAudit(actor, "runtime_policy.reset", "system_setting", runtimePolicySettingKey, "重置资源与请求策略", map[string]any{"before": before, "after": after}); err != nil {
 		return nil, err
@@ -271,7 +287,7 @@ func (s *Service) readRuntimePolicy() (*model.SystemSetting, RuntimePolicySettin
 	if err != nil {
 		return nil, RuntimePolicySetting{}, err
 	}
-	value := RuntimePolicySetting{}
+	value := defaultRuntimePolicy()
 	if strings.TrimSpace(setting.ValueJSON) == "" || json.Unmarshal([]byte(setting.ValueJSON), &value) != nil {
 		return nil, RuntimePolicySetting{}, errors.New("资源与请求策略配置格式无效")
 	}
@@ -311,6 +327,9 @@ func validateRuntimePolicy(value RuntimePolicySetting) error {
 		if item < 1 || item > maxRuntimeCount {
 			return BadAuthRequest(fmt.Sprintf("%s必须是 1-%d 的整数", label, maxRuntimeCount))
 		}
+	}
+	if resource.RecycleBinRetentionDays < 0 || resource.RecycleBinRetentionDays > 365 {
+		return BadAuthRequest("回收站保留天数必须是 0-365 的整数 (0 表示不自动清理)")
 	}
 	task := value.Task
 	for label, item := range map[string]int{

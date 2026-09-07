@@ -130,12 +130,8 @@ func (m *Manager) preflight(composePath, targetVersion string) error {
 			return fmt.Errorf("检查 Host Updater 安装目录：%w", err)
 		}
 	}
-	available, err := availableDiskBytes(m.config.BackupDir)
-	if err != nil {
-		return fmt.Errorf("检查备份磁盘空间：%w", err)
-	}
-	if available < 2<<30 {
-		return fmt.Errorf("备份目录可用空间不足 2 GiB：当前 %d MiB", available>>20)
+	if err := checkBackupDiskSpace(m.config.BackupDir); err != nil {
+		return err
 	}
 	if err := m.compose(composePath, targetVersion, 2*time.Minute, nil, "config", "--quiet"); err != nil {
 		return fmt.Errorf("目标 Compose 校验失败：%w", err)

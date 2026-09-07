@@ -1,18 +1,29 @@
-import { Eraser, FolderOpen, Hand, Palette, Plus, Redo2, Settings2, SquareDashedMousePointer, Trash2, Undo2, X } from "lucide-react";
+import { Eraser, FolderOpen, Hand, Palette, Plus, Redo2, Settings2, SquareDashedMousePointer, Trash2, Undo2 } from "lucide-react";
 
 import { registerToolbarTools, type ToolDefinition } from "@/lib/canvas/tool-registry";
 
 export const mainToolbarTools: ToolDefinition[] = [
     {
+        id: "tool-move",
+        toolbar: "main",
+        category: "navigation",
+        label: "抓手工具",
+        icon: <Hand />,
+        defaultVisible: true,
+        defaultOrder: 10,
+        active: (ctx) => ctx.canvasTool === "move",
+        run: (ctx) => ctx.handlers.onToolChange("move"),
+    },
+    {
         id: "tool-box-select",
         toolbar: "main",
         category: "navigation",
-        label: "框选",
+        label: "区域选择",
         icon: <SquareDashedMousePointer />,
         defaultVisible: true,
         defaultOrder: 10,
         active: (ctx) => ctx.canvasTool === "box-select",
-        run: (ctx) => ctx.handlers.onToolChange(ctx.canvasTool === "box-select" ? "move" : "box-select"),
+        run: (ctx) => ctx.handlers.onToolChange("box-select"),
     },
     {
         id: "tool-move",
