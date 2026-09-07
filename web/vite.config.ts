@@ -8,18 +8,6 @@ const webDir = dirname(fileURLToPath(import.meta.url));
 const appVersion = process.env.CANVAS_BUILD_VERSION?.trim() || readFileSync(resolve(webDir, "../VERSION"), "utf8").trim();
 const appChangelog = readFileSync(resolve(webDir, "../CHANGELOG.md"), "utf8");
 const apiProxyTarget = process.env.VITE_API_PROXY_TARGET?.trim() || "http://127.0.0.1:8080";
-const apiProxy = {
-    "/api": {
-        target: apiProxyTarget,
-        changeOrigin: true,
-        xfwd: true,
-    },
-    "/oauth/linuxdo/callback": {
-        target: apiProxyTarget,
-        changeOrigin: true,
-        xfwd: true,
-    },
-};
 
 export default defineConfig({
     plugins: [react()],
@@ -29,10 +17,18 @@ export default defineConfig({
         "import.meta.env.VITE_APP_VERSION": JSON.stringify(appVersion),
     },
     server: {
-        proxy: apiProxy,
-    },
-    preview: {
-        proxy: apiProxy,
+        proxy: {
+            "/api": {
+                target: apiProxyTarget,
+                changeOrigin: true,
+                xfwd: true,
+            },
+            "/oauth/linuxdo/callback": {
+                target: apiProxyTarget,
+                changeOrigin: true,
+                xfwd: true,
+            },
+        },
     },
     resolve: {
         alias: {

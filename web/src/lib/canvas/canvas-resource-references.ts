@@ -129,14 +129,20 @@ export function buildOrderedCanvasResourceReferences(nodes: CanvasNodeData[], ac
 }
 
 export function getMentionResourceNodes(nodeId: string, nodes: CanvasNodeData[], connections: CanvasConnection[]) {
-    const merged = uniqueResourceNodes([...getContextResourceNodes(nodeId, nodes, connections), ...getConnectedConfigResourceNodes(nodeId, nodes, connections)]);
-    if (merged.length) return merged;
+    const configInputs = getConnectedConfigResourceNodes(nodeId, nodes, connections);
+    if (configInputs.length) return configInputs;
+    const ownInputs = getContextResourceNodes(nodeId, nodes, connections);
+    if (ownInputs.length) return ownInputs;
     const node = nodes.find((item) => item.id === nodeId);
     return node && isResourceNode(node) ? [node] : [];
 }
 
 export function getGenerationResourceNodes(nodeId: string, nodes: CanvasNodeData[], connections: CanvasConnection[]) {
-    return uniqueResourceNodes([...getContextResourceNodes(nodeId, nodes, connections), ...getConnectedConfigResourceNodes(nodeId, nodes, connections)]);
+    const configInputs = getConnectedConfigResourceNodes(nodeId, nodes, connections);
+    if (configInputs.length) return configInputs;
+    const ownInputs = getContextResourceNodes(nodeId, nodes, connections);
+    if (ownInputs.length) return ownInputs;
+    return [];
 }
 
 /** 收集节点自身及其上游链路中的视频节点，用于时间线片段导入定位真正的视频源。 */
@@ -179,10 +185,7 @@ function labelResourceNodes(nodes: CanvasNodeData[], active: boolean) {
         const kind = resourceKind(node);
         if (!kind) return [];
         const index = node.type === CanvasNodeType.Drawing ? drawingCount++ : counts[kind]++;
-        const numbered = node.type === CanvasNodeType.Drawing ? `绘图${index + 1}` : labelForKind(kind, index);
-        const title = node.title?.trim() || numbered;
-        // 文本和图片在提示词输入框里显示节点名，避免连入后只看到「文本1」「图片1」。
-        const label = kind === "text" || kind === "image" ? title : numbered;
+        const label = node.type === CanvasNodeType.Drawing ? `绘图${index + 1}` : labelForKind(kind, index);
         return [
             {
                 id: node.id,
@@ -216,15 +219,6 @@ function labelForKind(kind: CanvasResourceKind, index: number) {
     return `文本${index + 1}`;
 }
 
-function uniqueResourceNodes(nodes: CanvasNodeData[]) {
-    const seen = new Set<string>();
-    return nodes.filter((node) => {
-        if (seen.has(node.id)) return false;
-        seen.add(node.id);
-        return true;
-    });
-}
-
 function isResourceNode(node: CanvasNodeData) {
     return Boolean(resourceKind(node));
 }
@@ -232,17 +226,7 @@ function isResourceNode(node: CanvasNodeData) {
 function resourceKind(node: CanvasNodeData): CanvasResourceKind | null {
     // 角色卡是跨类型覆盖：任何节点带上角色元数据都按角色处理，故先于按类型判定。
     if (node.metadata?.workflowKind === "character" && node.metadata.characterAssetId) return "character";
-    // 连入的图片按节点类型即可作为预引用；生成结果可能只在 storageKey 上，或节点仍为空。
-    if (node.type === CanvasNodeType.Image) return "image";
-    if (node.type === CanvasNodeType.Video && (node.metadata?.content || node.metadata?.storageKey)) return "video";
-    if (node.type === CanvasNodeType.Audio && (node.metadata?.content || node.metadata?.storageKey)) return "audio";
     return getNodeResourceKind(node);
-}
-
-function mediaPreviewUrl(content?: string) {
-    if (!content) return undefined;
-    if (content.startsWith("data:") || content.startsWith("blob:") || content.startsWith("http://") || content.startsWith("https://")) return content;
-    return undefined;
 }
 
 function skillResourceText(node: CanvasNodeData) {

@@ -594,8 +594,7 @@ export default function CreatePage() {
             releaseRetryLock();
             return;
         }
-        const videoSeconds = seconds;
-        if (mode === "video" && !videoDurationAllowed(videoProfile, Number(videoSeconds))) {
+        if (mode === "video" && !videoDurationAllowed(videoProfile, Number(seconds))) {
             toast.error("当前模型不支持所选视频时长，请重新选择");
             releaseRetryLock();
             return;
@@ -605,7 +604,7 @@ export default function CreatePage() {
             releaseRetryLock();
             return;
         }
-        const settings = { ratio, seconds: videoSeconds, quality, videoQuality, count };
+        const settings = { ratio, seconds, quality, videoQuality, count };
         const references = selectedCreationReferences(text, mentionReferences);
         // 后端对图片和视频使用不同的参考字段；这里先拆分，避免媒体类型在写入任务时被误判。
         const { referenceImages, referenceVideos, referenceAudios } = splitCreationAttachments(attachments);

@@ -87,28 +87,19 @@ export default function UsersPanel({ onUserChanged }: { onUserChanged?: (user: L
 
     const toggleStatus = useCallback(async (user: AdminUser) => {
         try {
-            const nextStatus = user.status === "active" ? "disabled" : "active";
-            const result = await updateAdminUser(user.id, { status: nextStatus });
+            if (user.status === "active") {
+                await deleteAdminUser(user.id);
+                replaceUser({ ...user, status: "disabled" });
+                message.success("用户已停用并清除登录状态");
+                return;
+            }
+            const result = await updateAdminUser(user.id, { status: "active" });
             replaceUser(result.user);
-            message.success(nextStatus === "disabled" ? "用户已停用并清除登录状态" : "用户已重新启用");
+            message.success("用户已重新启用");
         } catch (error) {
             message.error(error instanceof Error ? error.message : "更新用户状态失败");
         }
     }, [message, replaceUser]);
-
-    const removeUser = useCallback(async (user: AdminUser) => {
-        try {
-            await deleteAdminUser(user.id);
-            setUsers((items) => items.filter((item) => item.id !== user.id));
-            setTotal((value) => Math.max(0, value - 1));
-            setSelectedUserIds((ids) => ids.filter((id) => id !== user.id));
-            setDetailUserId((current) => (current === user.id ? null : current));
-            if (users.length <= 1 && state.page > 1) update({ page: state.page - 1 });
-            message.success("用户已删除");
-        } catch (error) {
-            message.error(error instanceof Error ? error.message : "删除用户失败");
-        }
-    }, [message, state.page, update, users.length]);
 
     const columns = useMemo(() => createUserColumns({
         actorId: actor?.id,
@@ -116,8 +107,7 @@ export default function UsersPanel({ onUserChanged }: { onUserChanged?: (user: L
         onView: (user) => setDetailUserId(user.id),
         onEdit: (user) => { setCreateUserOpen(false); setEditingUser(user); },
         onToggleStatus: toggleStatus,
-        onDelete: removeUser,
-    }), [actor?.id, removeUser, toggleStatus, visibleColumns]);
+    }), [actor?.id, toggleStatus, visibleColumns]);
 
     const resetFilters = () => update({ filter: "", role: "all", status: "all", page: 1 });
 

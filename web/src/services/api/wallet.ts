@@ -263,13 +263,7 @@ export function getAdminEmailSetting() {
 }
 
 export function updateAdminEmailSetting(input: Partial<EmailSetting>) {
-    const rawPort = input.port as unknown;
-    const payload = { ...input };
-    if (typeof rawPort === "string") {
-        const parsed = Number(rawPort.trim());
-        if (Number.isInteger(parsed)) payload.port = parsed;
-    }
-    return request<{ setting: EmailSetting }>(api.patch("/admin/settings/email", payload));
+    return request<{ setting: EmailSetting }>(api.patch("/admin/settings/email", input));
 }
 
 export function listAdminChannelModels(channelId: string) {

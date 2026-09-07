@@ -21,23 +21,9 @@ export const mainToolbarTools: ToolDefinition[] = [
         label: "区域选择",
         icon: <SquareDashedMousePointer />,
         defaultVisible: true,
-        defaultOrder: 10,
+        defaultOrder: 20,
         active: (ctx) => ctx.canvasTool === "box-select",
         run: (ctx) => ctx.handlers.onToolChange("box-select"),
-    },
-    {
-        id: "tool-move",
-        toolbar: "main",
-        category: "navigation",
-        label: (ctx) => ctx.canvasTool === "box-select" ? "移动与选择" : ctx.selectedCount ? `取消选择${ctx.selectedCount > 1 ? ` ${ctx.selectedCount} 个节点` : ""}` : "移动与选择",
-        icon: (ctx) => ctx.canvasTool === "box-select" ? <Hand /> : ctx.selectedCount ? <X /> : <Hand />,
-        defaultVisible: true,
-        defaultOrder: 20,
-        active: (ctx) => ctx.canvasTool === "move",
-        run: (ctx) => {
-            if (ctx.canvasTool !== "move") ctx.handlers.onToolChange("move");
-            else ctx.handlers.onDeselect();
-        },
     },
     {
         id: "tool-undo",
