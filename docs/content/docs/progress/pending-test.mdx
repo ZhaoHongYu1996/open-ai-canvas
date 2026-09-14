@@ -7,9 +7,9 @@ description: 当前项目已实现功能的手工验证清单与未确认边界
 
 ## Host Updater 仓库来源
 
-- Host Updater 默认从当前仓库 `ZhaoHongYu1996/open-ai-canvas` 读取 GitHub Release，不再使用 `ddcat-ai/open-ai-canvas`。
+- Host Updater 默认从当前仓库 `zhaohongyu1996/open-ai-canvas` 读取 GitHub Release，不再使用 `ddcat-ai/open-ai-canvas`。仓库 owner 按小写规范化，避免 Docker 拒绝大小写混写的 GHCR 镜像名。
 - `docker-compose.deploy.yml` 与镜像摘要校验使用 `ghcr.io/zhaohongyu1996/open-ai-canvas-{web,backend}`，不再拉取上游 `ddcat-ai` 镜像。
-- [ ] 管理后台「系统配置 → 系统更新」展示的仓库为 `ZhaoHongYu1996/open-ai-canvas`。该仓库发布带 Host Updater 资产的 `v1.2.9` Release 后，检查更新、备份和升级可用。
+- [ ] 管理后台「系统配置 → 系统更新」展示的仓库为 `zhaohongyu1996/open-ai-canvas`。线上已把更新器仓库改为小写并换上 `v1.2.9` 二进制后，应能通过镜像摘要校验并完成升级。
 
 ## TSAI 系统协议插件
 

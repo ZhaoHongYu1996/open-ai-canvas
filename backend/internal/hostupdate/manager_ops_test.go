@@ -101,6 +101,17 @@ func TestGHCRImageRefLowercasesOwner(t *testing.T) {
 	}
 }
 
+func TestNormalizeRepositoryLowercasesOwner(t *testing.T) {
+	got := normalizeRepository("ZhaoHongYu1996/open-ai-canvas")
+	want := "zhaohongyu1996/open-ai-canvas"
+	if got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+	if normalizeRepository("") != want {
+		t.Fatalf("empty repository default = %q", normalizeRepository(""))
+	}
+}
+
 func TestCurrentVersionRejectsLatest(t *testing.T) {
 	installDir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(installDir, ".env"), []byte("CANVAS_IMAGE_TAG=latest\n"), 0o600); err != nil {

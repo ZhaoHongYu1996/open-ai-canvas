@@ -67,11 +67,20 @@ type Manager struct {
 	state      persistedState
 }
 
-func NewManager(config Config) (*Manager, error) {
-	config.Repository = strings.TrimSpace(config.Repository)
-	if config.Repository == "" {
-		config.Repository = "ZhaoHongYu1996/open-ai-canvas"
+func normalizeRepository(repository string) string {
+	repository = strings.TrimSpace(repository)
+	if repository == "" {
+		return "zhaohongyu1996/open-ai-canvas"
 	}
+	owner, name, ok := strings.Cut(repository, "/")
+	if !ok || strings.TrimSpace(name) == "" {
+		return strings.ToLower(repository)
+	}
+	return strings.ToLower(owner) + "/" + name
+}
+
+func NewManager(config Config) (*Manager, error) {
+	config.Repository = normalizeRepository(config.Repository)
 	if config.InstallDir == "" {
 		config.InstallDir = "/opt/open-ai-canvas"
 	}
