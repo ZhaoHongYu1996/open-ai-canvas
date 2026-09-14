@@ -4,7 +4,9 @@
 
 ## v1.2.9
 
-- 发布正式版本 `v1.2.9`，提供 `ghcr.io/ddcat-ai/open-ai-canvas-web:1.2.9` 与 `ghcr.io/ddcat-ai/open-ai-canvas-backend:1.2.9` 的 Linux amd64/arm64 镜像，并更新 `latest` 镜像。
+- 发布正式版本 `v1.2.9`，提供 `ghcr.io/zhaohongyu1996/open-ai-canvas-web:1.2.9` 与 `ghcr.io/zhaohongyu1996/open-ai-canvas-backend:1.2.9` 的 Linux amd64/arm64 镜像。Release 同时附带 Host Updater 二进制、`SHA256SUMS` 与 `docker-compose.deploy.yml`，供本仓库在线更新使用。
+- 部署 Compose 改为拉取本仓库 GHCR 镜像；Host Updater 按仓库 owner 的小写路径校验镜像摘要。
+- 合入上游 `v1.2.9`，并保留 Dev 独有能力：TSAI 系统协议插件（对话 / MiniMax H3 / Seedance mini / Seedream）以及 OpenAiBxinle 宿主协议与官方插件。
 - 新增全景图配置与查看链路，支持图片节点创建全景节点、全屏环视、截图、四向视图导出、方向键控制和只读分享降级。
 - 优化画布打光与镜头控制交互，确认后先创建可编辑的空图片节点，支持后续修改提示词、模型和尺寸再生成。
 - 优化图片资源交付与缓存，图片使用长期磁盘缓存和视口内直链首帧，视频与音频继续保持条件请求语义；创作页生成类型改为视频/图片/文本胶囊切换，录音控件支持窄屏压缩。

@@ -266,19 +266,24 @@ func (m *Manager) compose(composePath, imageTag string, timeout time.Duration, s
 	return nil
 }
 
+func ghcrImageRef(repository, name, version string) string {
+	owner := strings.ToLower(strings.SplitN(strings.TrimSpace(repository), "/", 2)[0])
+	return "ghcr.io/" + owner + "/" + name + ":" + strings.TrimPrefix(version, "v")
+}
+
 func (m *Manager) verifyImages(targetVersion string) error {
-	owner := strings.SplitN(m.config.Repository, "/", 2)[0]
-	for _, image := range []string{"ghcr.io/" + owner + "/open-ai-canvas-backend:", "ghcr.io/" + owner + "/open-ai-canvas-web:"} {
+	for _, name := range []string{"open-ai-canvas-backend", "open-ai-canvas-web"} {
+		image := ghcrImageRef(m.config.Repository, name, targetVersion)
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 		var output bytes.Buffer
 		var stderr bytes.Buffer
-		err := m.runner.Run(ctx, "docker", []string{"image", "inspect", image + strings.TrimPrefix(targetVersion, "v"), "--format", "{{json .RepoDigests}}"}, nil, &output, &stderr)
+		err := m.runner.Run(ctx, "docker", []string{"image", "inspect", image, "--format", "{{json .RepoDigests}}"}, nil, &output, &stderr)
 		cancel()
 		if err != nil {
 			return fmt.Errorf("校验目标镜像摘要失败：%s", strings.TrimSpace(stderr.String()))
 		}
 		if !strings.Contains(output.String(), "@sha256:") {
-			return fmt.Errorf("目标镜像 %s 未包含仓库摘要", image+targetVersion)
+			return fmt.Errorf("目标镜像 %s 未包含仓库摘要", image)
 		}
 	}
 	return nil

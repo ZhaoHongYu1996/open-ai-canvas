@@ -93,6 +93,14 @@ func TestVerifyZipBackupRejectsCorruption(t *testing.T) {
 	}
 }
 
+func TestGHCRImageRefLowercasesOwner(t *testing.T) {
+	got := ghcrImageRef("ZhaoHongYu1996/open-ai-canvas", "open-ai-canvas-backend", "v1.2.9")
+	want := "ghcr.io/zhaohongyu1996/open-ai-canvas-backend:1.2.9"
+	if got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
 func TestCurrentVersionRejectsLatest(t *testing.T) {
 	installDir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(installDir, ".env"), []byte("CANVAS_IMAGE_TAG=latest\n"), 0o600); err != nil {
