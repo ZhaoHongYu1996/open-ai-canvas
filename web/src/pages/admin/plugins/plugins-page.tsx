@@ -1,4 +1,5 @@
-import { App, Button, Input, Select, Switch } from "antd";
+import { App, Button, Input, Select } from "antd";
+import { Switch } from "@/components/ui/base/switch";
 import { AlipayCircleFilled, WechatFilled } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import { CloudUpload, PlugZap, RefreshCw, Search, Trash2, UsersRound } from "lucide-react";
@@ -8,7 +9,7 @@ import { PaginationBar } from "@/components/layout/workspace-page";
 import "@/lib/plugins/builtin";
 import { EAGLE_PLUGIN_ID } from "@/lib/plugins/builtin/eagle";
 import { PROMPT_OPTIMIZER_PLUGIN_ID } from "@/lib/plugins/builtin/prompt-optimizer";
-import { COMFYUI_PLUGIN_ID, RUNNINGHUB_PLUGIN_ID } from "@/lib/plugins/builtin/workflows";
+import { RUNNINGHUB_PLUGIN_ID } from "@/lib/plugins/builtin/workflows";
 import { listRegisteredPlugins } from "@/lib/plugins/plugin-registry";
 import type { PluginManifest, PluginManifestV2 } from "@/lib/plugins/plugin-types";
 import { fetchAdminPlugins, setPluginPlatformAvailability, uninstallPlugin, uploadPlugin, type AdminPluginState, type BackendPlugin, type PluginManagement } from "@/services/api/plugins";
@@ -25,7 +26,7 @@ type AdminPluginItem = {
     error?: string;
 };
 
-const officialApplicationIds = new Set([RUNNINGHUB_PLUGIN_ID, COMFYUI_PLUGIN_ID, EAGLE_PLUGIN_ID, PROMPT_OPTIMIZER_PLUGIN_ID, "portrait-clearance"]);
+const officialApplicationIds = new Set([RUNNINGHUB_PLUGIN_ID, EAGLE_PLUGIN_ID, PROMPT_OPTIMIZER_PLUGIN_ID]);
 
 export default function AdminPluginsPage() {
     const { message, modal } = App.useApp();
@@ -369,7 +370,7 @@ function mergePlugins(remote: BackendPlugin[]): AdminPluginItem[] {
                 origin: "official",
                 kind: application ? "application" : "protocol",
                 activationScope: application ? "user" : "system",
-                configurationScope: application ? (plugin.manifest.id === EAGLE_PLUGIN_ID || plugin.manifest.id === RUNNINGHUB_PLUGIN_ID || plugin.manifest.id === COMFYUI_PLUGIN_ID ? "user" : "none") : "system",
+                configurationScope: application ? (plugin.manifest.id === EAGLE_PLUGIN_ID || plugin.manifest.id === RUNNINGHUB_PLUGIN_ID ? "user" : "none") : "system",
             },
         });
     }

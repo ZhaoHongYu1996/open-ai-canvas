@@ -1,13 +1,15 @@
-import { App, Button, Input, Modal, Select, Switch, Typography } from "antd";
+import { App, Button, Input, Modal, Select, Typography } from "antd";
+import { Switch } from "@/components/ui/base/switch";
 import { AudioLines, CalendarDays, CheckCircle2, Clock3, CreditCard, ExternalLink, Film, FolderOpen, Image as ImageIcon, MessageSquareText, PlugZap, RefreshCw, Search, Settings2, ShieldCheck, SlidersHorizontal } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 
+import { EmptyState } from "@/components/ui/product/empty-state";
 import { listRegisteredPlugins } from "@/lib/plugins/plugin-registry";
 import "@/lib/plugins/builtin";
 import { EAGLE_PLUGIN_ID } from "@/lib/plugins/builtin/eagle";
 import { PROMPT_OPTIMIZER_PLUGIN_ID } from "@/lib/plugins/builtin/prompt-optimizer";
-import { COMFYUI_PLUGIN_ID, RUNNINGHUB_PLUGIN_ID } from "@/lib/plugins/builtin/workflows";
+import { RUNNINGHUB_PLUGIN_ID } from "@/lib/plugins/builtin/workflows";
 import { ART_CRITIQUE_PLUGIN_ID } from "@/lib/art-critique/contracts";
 import type { PluginManifest, PluginManifestV2, RegisteredPlugin } from "@/lib/plugins/plugin-types";
 import { getEagleLibrary, type EagleFolder } from "@/services/api/eagle";
@@ -156,11 +158,12 @@ export default function PluginsPage() {
     }, [backendPluginById, categoryFilter, features.systemPluginsVisibleToUsers, installations, pluginStates, registeredPlugins, search, statusFilter, trustFilter, user?.role]);
 
     const pluginSections = useMemo(
-        () => [
-            ...protocolSectionMeta.map((section) => ({ ...section, plugins: filteredPlugins.filter((plugin) => pluginMatchesCategory(plugin.manifest, section.key)) })),
-            { key: "other", label: "应用插件", description: "画布、素材与工作流扩展", icon: PlugZap, plugins: filteredPlugins.filter((plugin) => pluginMatchesCategory(plugin.manifest, "other")) },
-        ],
-        [filteredPlugins],
+        () =>
+            [
+                ...protocolSectionMeta.map((section) => ({ ...section, plugins: filteredPlugins.filter((plugin) => pluginMatchesCategory(plugin.manifest, section.key)) })),
+                { key: "other", label: "应用插件", description: "画布、素材与工作流扩展", icon: PlugZap, plugins: filteredPlugins.filter((plugin) => pluginMatchesCategory(plugin.manifest, "other")) },
+            ].filter((section) => categoryFilter === "all" || section.key === categoryFilter),
+        [categoryFilter, filteredPlugins],
     );
 
     const selectCategory = (key: string) => {
@@ -199,7 +202,7 @@ export default function PluginsPage() {
     const detailsPlugin = detailsPluginId ? registeredPlugins.find((plugin) => plugin.manifest.id === detailsPluginId) : undefined;
 
     const hasPluginConfiguration = (plugin: RegisteredPlugin) => Boolean(plugin.manifest.configuration?.fields?.length);
-    const canConfigurePlugin = (plugin: RegisteredPlugin) => Boolean(pluginStates[plugin.manifest.id]?.canConfigure) && (hasPluginConfiguration(plugin) || plugin.manifest.id === RUNNINGHUB_PLUGIN_ID || plugin.manifest.id === COMFYUI_PLUGIN_ID);
+    const canConfigurePlugin = (plugin: RegisteredPlugin) => Boolean(pluginStates[plugin.manifest.id]?.canConfigure) && (hasPluginConfiguration(plugin) || plugin.manifest.id === RUNNINGHUB_PLUGIN_ID);
 
     const isPluginEnabled = (plugin: RegisteredPlugin, installation = installations.find((item) => item.manifest.id === plugin.manifest.id)) => pluginStates[plugin.manifest.id]?.effectiveEnabled ?? Boolean(installation?.enabled);
 
@@ -208,7 +211,7 @@ export default function PluginsPage() {
             const next = await setUserPluginEnabled(plugin.manifest.id, enabled);
             setEnabled(plugin.manifest.id, enabled);
             setPluginStates({ ...usePluginStore.getState().pluginStates, [next.pluginId]: next });
-            if (next.pluginId === RUNNINGHUB_PLUGIN_ID || next.pluginId === COMFYUI_PLUGIN_ID) {
+            if (next.pluginId === RUNNINGHUB_PLUGIN_ID) {
                 setRuntimeStatuses({ ...usePluginStore.getState().runtimeStatuses, [next.pluginId]: next.effectiveEnabled ? "enabled" : "disabled" });
             }
             message.success(`${plugin.manifest.name}${enabled ? "已启用" : "已停用"}`);
@@ -469,21 +472,24 @@ export default function PluginsPage() {
                                 })}
                             </div>
                         ) : (
-                            <div className="plugins-empty-state">
-                                <SlidersHorizontal className="size-7" aria-hidden="true" />
-                                <h3>没有匹配的插件</h3>
-                                <p>试试清空搜索词，或放宽筛选条件。</p>
-                                <Button
-                                    onClick={() => {
-                                        setSearch("");
-                                        setCategoryFilter("all");
-                                        setStatusFilter("all");
-                                        setTrustFilter("all");
-                                    }}
-                                >
-                                    清除筛选
-                                </Button>
-                            </div>
+                            <EmptyState
+                                className="min-h-[260px] rounded-[var(--plugins-card-radius)] bg-foreground/[0.03]"
+                                icon={SlidersHorizontal}
+                                title="没有匹配的插件"
+                                description="试试清空搜索词，或放宽筛选条件。"
+                                action={
+                                    <Button
+                                        onClick={() => {
+                                            setSearch("");
+                                            setCategoryFilter("all");
+                                            setStatusFilter("all");
+                                            setTrustFilter("all");
+                                        }}
+                                    >
+                                        清除筛选
+                                    </Button>
+                                }
+                            />
                         )}
 
                         <Modal
@@ -565,15 +571,15 @@ export default function PluginsPage() {
                                             <p>在创作页或图片、视频节点的提示词编辑器中使用“优化”按钮，即可让当前文本模型整理提示词。</p>
                                             <p className="mt-2 text-[var(--fs-micro)] text-foreground/50">插件不会自动覆盖原提示词，只有点击“采用”后才会回填到当前输入框。</p>
                                         </div>
-                                    ) : settingsPlugin.manifest.id === RUNNINGHUB_PLUGIN_ID || settingsPlugin.manifest.id === COMFYUI_PLUGIN_ID ? (
+                                    ) : settingsPlugin.manifest.id === RUNNINGHUB_PLUGIN_ID ? (
                                         <div className="plugin-settings-empty">
-                                            <p>{settingsPlugin.manifest.id === RUNNINGHUB_PLUGIN_ID ? "RunningHub 的 API Key、Workflow / App 和字段映射在宿主设置页维护。" : "ComfyUI Bridge 的设备、服务地址和工作流字段在宿主设置页维护。"}</p>
+                                            <p>RunningHub 的 API Key、Workflow / App 和字段映射在宿主设置页维护。</p>
                                             <Button
                                                 type="primary"
                                                 icon={<ExternalLink className="size-4" />}
                                                 onClick={() => {
                                                     setSettingsPluginId(null);
-                                                    navigate(`/settings?section=${settingsPlugin.manifest.id === RUNNINGHUB_PLUGIN_ID ? "runninghub" : "comfyui"}`);
+                                                    navigate("/settings?section=runninghub");
                                                 }}
                                             >
                                                 打开工作流设置
@@ -621,7 +627,7 @@ function toRegisteredPlugin(plugin: BackendPlugin): RegisteredPlugin {
 }
 
 function isOfficialApplicationPlugin(pluginId: string) {
-    return [RUNNINGHUB_PLUGIN_ID, COMFYUI_PLUGIN_ID, EAGLE_PLUGIN_ID, PROMPT_OPTIMIZER_PLUGIN_ID, "portrait-clearance", ART_CRITIQUE_PLUGIN_ID].includes(pluginId);
+    return [RUNNINGHUB_PLUGIN_ID, EAGLE_PLUGIN_ID, PROMPT_OPTIMIZER_PLUGIN_ID, ART_CRITIQUE_PLUGIN_ID].includes(pluginId);
 }
 
 function pluginSourceLabel(plugin: RegisteredPlugin, state?: PluginState) {

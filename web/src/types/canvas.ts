@@ -2,8 +2,8 @@ import type { CanvasColorGrade } from "@/lib/canvas/canvas-color-grade";
 import type { AssetCategory } from "@/lib/asset-category";
 import type { PortraitTextureSettings } from "@/lib/canvas/canvas-portrait-texture";
 import type { StyleExecutionPlan } from "@/lib/canvas/style-profile";
-import type { PortraitClearanceNodeState } from "@/lib/portrait-clearance/contracts";
 import type { ArtCritiqueNodeState } from "@/lib/art-critique/contracts";
+import type { CameraControlOptions } from "@/lib/canvas/camera-prompt-library";
 import type { SrtEntry, SubtitleHighlight, SubtitleStyle } from "@/types/timeline";
 
 export type Position = {
@@ -210,6 +210,9 @@ export type CanvasNodeMetadata = {
     promptTemplateOperation?: string;
     promptTemplateVariables?: Record<string, string>;
     status?: CanvasNodeStatus;
+    /** 浏览器文件上传，与模型生成任务状态独立。 */
+    fileUpload?: "uploading" | "error";
+    fileUploadProgress?: number;
     locked?: boolean;
     errorDetails?: string;
     generationErrorCode?: string;
@@ -220,10 +223,9 @@ export type CanvasNodeMetadata = {
     generationMode?: CanvasGenerationMode;
     generationType?: CanvasImageGenerationType;
     model?: string;
-    workflowProvider?: "model" | "runninghub" | "comfyui";
+    workflowProvider?: "model" | "runninghub";
     runningHubWorkflowId?: string;
     runningHubWorkflowKind?: "workflow" | "app";
-    comfyBridgeWorkflowId?: string;
     /** 当前画布节点覆盖的工作流动态字段，键为 source:* 或 field:nodeId:fieldName。 */
     workflowParameters?: Record<string, unknown>;
     size?: string;
@@ -418,10 +420,17 @@ export type CanvasNodeMetadata = {
         editMode?: "provider-mask" | "local-composite";
     };
     portraitTexture?: PortraitTextureSettings;
-    /** 肖像排查节点只保存可恢复的 UI 状态，不保存图片、embedding 或完整结果。 */
-    portraitClearance?: PortraitClearanceNodeState;
     /** AI 审美批改节点只保存当前报告和输入指纹，不保存图片二进制。 */
     artCritique?: ArtCritiqueNodeState;
+    /** 摄像机控制选项，启用后生成时自动追加摄影机/镜头/焦距/光圈提示词。 */
+    cameraControl?: CameraControlOptions;
+    /** 全景节点配置：投影方式、生成方式和比例兜底开关。 */
+    panoramaConfig?: {
+        projection: "spherical" | "cylindrical";
+        sourceMode: "ai" | "image";
+        smartBase: boolean;
+        directImageUrl?: string | null;
+    };
 };
 
 export type CanvasNodeData = {

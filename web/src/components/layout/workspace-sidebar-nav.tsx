@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState, type ComponentType, type CSSPrope
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
 
 import { BrandLogoFrame } from "@/components/brand/brand-logo";
+import { Kbd } from "@/components/ui/base/kbd";
 import { navigationTools, type NavigationToolSlug } from "@/constant/navigation-tools";
 import { useWalletBalance } from "@/hooks/use-wallet-balance";
 import { useWorkspaceLogout } from "@/hooks/use-workspace-logout";
@@ -29,7 +30,6 @@ type WorkspaceNavGroup = {
 
 /** 设置页分区子项，沿用 /settings?section=<key> 路由合同。 */
 const SETTINGS_SECTIONS: Array<{ key: string; label: string }> = [
-    { key: "local-cli", label: "本机工具" },
     { key: "channels", label: "自定义渠道" },
     { key: "models", label: "模型选择" },
     { key: "preferences", label: "生成偏好" },
@@ -125,6 +125,9 @@ function WorkspaceSwitcher({ collapsed, onNavigate, onExpand }: { collapsed: boo
                             <div className="mt-0.5 truncate text-[var(--fs-label)] text-foreground/45">创作工作台</div>
                         </div>
                         <div className="mx-2 my-1 h-px bg-[var(--workspace-border)]" />
+                        <a href="/welcome" className="flex w-full items-center gap-2 px-3 py-2 text-[var(--fs-body)] text-foreground/80 transition-colors hover:bg-surface-hover hover:text-foreground">
+                            品牌首页
+                        </a>
                         {[
                             { label: "首页", to: "/" },
                             { label: "画布", to: "/canvas" },
@@ -186,9 +189,7 @@ function NavItem({
             </span>
             <span className="app-workspace-nav-meta flex shrink-0 items-center gap-2">
                 {item.shortcut ? (
-                    <kbd className="hidden h-5 items-center justify-center rounded-sm border border-[var(--workspace-border)] bg-background/50 px-1.5 font-mono text-[var(--fs-tiny)] font-medium text-foreground/55 group-hover:inline-flex">
-                        {item.shortcut}
-                    </kbd>
+                    <Kbd className="hidden group-hover:inline-flex">{item.shortcut}</Kbd>
                 ) : null}
                 {item.badge !== undefined ? <span className="flex min-w-5 items-center justify-center rounded-full bg-primary/10 px-1.5 py-0.5 text-[var(--fs-tiny)] font-medium tabular-nums text-primary">{item.badge}</span> : null}
                 {hasChildren ? <ChevronRight className={cn("size-3.5 shrink-0 text-foreground/40 transition-transform duration-200", isOpen && "rotate-90")} strokeWidth={2} /> : null}
@@ -338,9 +339,7 @@ export function WorkspaceSidebarNav({ collapsed, onNavigate, onOpenSearch, onExp
                 >
                     <Search className="size-4 shrink-0 text-muted-foreground group-hover:text-foreground/70" strokeWidth={1.6} />
                     <span className="app-workspace-sidebar-search-label flex-1 truncate">快速搜索</span>
-                    <kbd className="app-workspace-sidebar-search-shortcut flex h-5 shrink-0 items-center justify-center rounded-sm border border-[var(--workspace-border)] bg-background/50 px-1.5 font-mono text-[var(--fs-tiny)] font-medium text-foreground/55">
-                        ⌘K
-                    </kbd>
+                    <Kbd className="app-workspace-sidebar-search-shortcut">⌘K</Kbd>
                 </button>
             </div>
 

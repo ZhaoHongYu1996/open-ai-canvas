@@ -81,18 +81,41 @@ test("channel model fetch requires explicit selection before import", async () =
     ]);
     const component = compactSource(componentSource);
 
-    expect(apiSource).toContain("api.post(`/admin/channels/${encodeURIComponent(channelId)}/models/fetch`)");
-    expect(apiSource).toContain("api.post(`/admin/channels/${encodeURIComponent(channelId)}/models/import`, { models })");
+    expect(apiSource).toContain("http.post<{ models: string[] }>(`/admin/channels/${encodeURIComponent(channelId)}/models/fetch`)");
+    expect(apiSource).toContain("http.post<{ models: string[]; added: number }>(`/admin/channels/${encodeURIComponent(channelId)}/models/import`, { models })");
     expect(component).toContain('title="选择要导入的模型"');
     expect(component).toContain("默认已全选");
     expect(component).toContain("setFetchPreviewOpen(true)");
     expect(component).toContain("setSelectedFetchModels(result.models)");
+    expect(component).toContain("已选择 {selectedFetchModels.length} / {fetchPreviewModels.length} 个模型");
+    expect(component).toContain("disabled={importing || allFetchModelsSelected}");
+    expect(component).toContain("onClick={() => setSelectedFetchModels(fetchPreviewModels)}");
+    expect(component).toContain("disabled={importing || selectedFetchModels.length === 0}");
+    expect(component).toContain("onClick={() => setSelectedFetchModels([])}");
+    expect(component).toContain("取消全选");
+    expect(component).toContain("disabled={importing}");
     expect(component).toContain("importAdminChannelModels(channel.id, selectedFetchModels)");
     expect(component).toContain("disabled={!selectedFetchModels.length}");
     expect(component).not.toContain("disabled: alreadyExists");
     expect(component).not.toContain("const result = await fetchAdminChannelModels(channel.id); await reload();");
     expect(adminCssSource).toContain(".admin-model-import-modal .channel-model-import-picker .ant-checkbox-checked");
     expect(adminCssSource).toContain("border-color: var(--control-check-fg) !important");
+});
+
+test("channel model manager supports bounded atomic batch deletion", async () => {
+    const [componentSource, apiSource] = await Promise.all([Bun.file(new URL("../src/pages/admin/components/channel-model-manager.tsx", import.meta.url)).text(), Bun.file(new URL("../src/services/api/wallet.ts", import.meta.url)).text()]);
+    const component = compactSource(componentSource);
+
+    expect(apiSource).toContain("http.post<{ deleted: number }>(`/admin/channels/${encodeURIComponent(channelId)}/models/batch-delete`, { modelIds })");
+    expect(component).toContain("<AdminBatchBar count={selectedModelIds.length}");
+    expect(component).toContain("rowSelection:");
+    expect(component).toContain("selectedRowKeys: selectedModelIds");
+    expect(component).toContain("preserveSelectedRowKeys: true");
+    expect(component).toContain("setSelectedModelIds(next.slice(0, 100))");
+    expect(component).toContain("deleteAdminChannelModels(channel.id, selectedModelIds)");
+    expect(component).toContain("okButtonProps: { danger: true }");
+    expect(component).toContain("本次就不会删除任何模型");
+    expect(component).toContain("批量删除");
 });
 
 test("analytics keeps fixed range presets distinct and uses enabled channel models for pricing", async () => {
@@ -255,7 +278,7 @@ test("request logs display user credit billing independently from upstream cost"
     const billingSummary = sourceSection(listSource, "function BillingSummary", "function MediaResult");
     expect(listSource).toContain('title: "积分计费"');
     expect(listSource).toContain('title: "请求阶段 / 状态"');
-    expect(listSource).toContain('description="模型生成、状态查询与结果下载；仅计费调用扣除积分"');
+    expect(listSource).toContain('description="模型生成与结果下载记录；仅计费调用扣除积分"');
     expect(billingSummary).toContain("billingAmountMicrocredits");
     expect(billingSummary).toContain("billingAvailable");
     expect(billingSummary).toContain("!log.billable");
