@@ -149,6 +149,15 @@ func DefaultImageCapabilityConfig(protocol string, modelName string) *ImageCapab
 		image.TransparentBackground.Supported = false
 		image.ResponseFormat.Supported = false
 		image.OutputFormat.Supported = false
+	case model.ChannelInterfaceType("tsai-seedream"):
+		image.References.PromptMaxChars = 20000
+		image.References.MaskSupported = false
+		image.Size = ImageSizeConfig{Parameter: "size", Values: []string{"2K", "4K", "2048x2048", "2560x1440", "1440x2560", "2304x1728", "1728x2304"}, Default: "2K", AllowCustom: true}
+		image.Quality.Supported = false
+		image.TransparentBackground.Supported = false
+		image.ResponseFormat.Supported = false
+		image.OutputFormat.Supported = false
+		image.MaxOutputs = 1
 	case model.ChannelInterfaceGeminiImage:
 		image.References.MaskSupported = false
 		// Gemini Images uses imageConfig.aspectRatio, not the OpenAI-style pixel size field.
@@ -219,7 +228,7 @@ func DefaultModelCapabilityConfigForModel(protocol string, modelName string) *Mo
 		video.GenerateAudio = VideoBooleanConfig{Supported: true, Default: true}
 		video.Watermark = VideoBooleanConfig{Supported: true, Default: false}
 		video.Resolutions = []string{"480p", "720p", "1080p"}
-	case model.ChannelInterfaceOpenAiBxinle:
+	case model.ChannelInterfaceOpenAiBxinle, model.ChannelInterfaceOpenAiBxinlePlugin:
 		video.References.MaxImages = 9
 		video.References.MaxVideos, video.References.MaxAudios = 3, 3
 		video.References.MaxVideoBytes, video.References.MaxAudioBytes = 200*1024*1024, 15*1024*1024
@@ -246,6 +255,33 @@ func DefaultModelCapabilityConfigForModel(protocol string, modelName string) *Mo
 		video.Ratios = []string{"16:9", "9:16", "1:1"}
 		video.Resolutions = []string{"1080p"}
 		video.DefaultResolution = "1080p"
+	case model.ChannelInterfaceType("tsai-minimax-h3"):
+		video.References.PromptMaxChars = 7000
+		video.References.MaxImages = 9
+		video.References.MaxImageBytes = 30 * 1024 * 1024
+		video.References.MaxVideos, video.References.MaxAudios = 3, 3
+		video.References.MaxVideoBytes, video.References.MaxAudioBytes = 50*1024*1024, 15*1024*1024
+		video.References.MaxVideoDuration, video.References.MaxAudioDuration = 15, 15
+		video.Duration = VideoDurationConfig{Selection: "range", Min: 4, Max: 15, Step: 1, Default: 5}
+		video.Ratios = []string{"adaptive", "21:9", "16:9", "4:3", "1:1", "3:4", "9:16"}
+		video.DefaultRatio = "16:9"
+		video.Resolutions = []string{"480P", "768P", "1080P", "2K"}
+		video.DefaultResolution = "768P"
+		video.Operations = []string{"text_to_video", "image_to_video", "reference_to_video"}
+	case model.ChannelInterfaceType("tsai-seedance-mini"):
+		video.References.PromptMaxChars = 20000
+		video.References.MaxImages = 9
+		video.References.MaxVideos, video.References.MaxAudios = 3, 3
+		video.References.MaxVideoBytes, video.References.MaxAudioBytes = 200*1024*1024, 15*1024*1024
+		video.References.MaxVideoDuration, video.References.MaxAudioDuration = 15, 15
+		video.Duration = VideoDurationConfig{Selection: "range", Min: 4, Max: 15, Step: 1, Default: 5}
+		video.Ratios = []string{"16:9", "4:3", "1:1", "3:4", "9:16", "21:9", "adaptive"}
+		video.DefaultRatio = "16:9"
+		video.Resolutions = []string{"480p", "720p"}
+		video.DefaultResolution = "720p"
+		video.GenerateAudio = VideoBooleanConfig{Supported: true, Default: true}
+		video.Watermark = VideoBooleanConfig{Supported: true, Default: false}
+		video.Operations = []string{"text_to_video", "image_to_video", "reference_to_video"}
 	case model.ChannelInterfaceMiniMaxVideo:
 		video.Operations = append(video.Operations, "reference_to_video")
 		video.References.MaxImages = 9

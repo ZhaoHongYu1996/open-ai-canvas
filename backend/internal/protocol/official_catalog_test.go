@@ -396,6 +396,235 @@ func TestOfficialOpenAIVideosDeclaresAuthenticatedResultDownload(t *testing.T) {
 	}
 }
 
+func TestOfficialOpenAiBxinleMapsZeroFAVideoContract(t *testing.T) {
+	adapter := officialPackageAdapter(t, "openai-bxinle.yingce-plugin", "openai-bxinle")
+	request := GenerationRequest{
+		Model: "seedance-video", Prompt: "保持角色一致", Duration: 5, AspectRatio: "16:9", Resolution: "720p", GenerateAudio: true,
+		Images: []MediaReference{
+			{URL: "https://cdn.example/last.png", Role: "last_frame", Order: 2},
+			{URL: "https://cdn.example/first.png", Role: "first_frame", Order: 1},
+			{URL: "https://cdn.example/ref.png", Role: "reference_image", Order: 3},
+		},
+		Videos: []MediaReference{{URL: "https://cdn.example/motion.mp4"}},
+		Audios: []MediaReference{{URL: "https://cdn.example/voice.mp3"}},
+	}
+	create, err := adapter.BuildCreate(context.Background(), RequestContext{Request: request})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if create.Method != "POST" || create.Path != "/v1/videos" || create.ContentType != "application/json" {
+		t.Fatalf("OpenAiBxinle create = %#v", create)
+	}
+	body := manifestTestBody(t, create)
+	if body["model"] != request.Model || body["prompt"] != request.Prompt || body["duration"] != float64(5) || body["aspect_ratio"] != "16:9" || body["resolution"] != "720P" || body["mode"] != "first_last_frame" {
+		t.Fatalf("OpenAiBxinle create body = %#v", body)
+	}
+	if body["first_frame"] != "https://cdn.example/first.png" || body["last_frame"] != "https://cdn.example/last.png" || body["image"] != "https://cdn.example/ref.png" {
+		t.Fatalf("OpenAiBxinle image fields = %#v", body)
+	}
+	if body["reference_video"] != "https://cdn.example/motion.mp4" || body["reference_audio"] != "https://cdn.example/voice.mp3" {
+		t.Fatalf("OpenAiBxinle media fields = %#v", body)
+	}
+
+	_, err = adapter.BuildCreate(context.Background(), RequestContext{Request: GenerationRequest{Model: "seedance-video", Prompt: "只用音频", Audios: []MediaReference{{URL: "https://cdn.example/voice.mp3"}}}})
+	if err == nil || !strings.Contains(err.Error(), "参考音频") {
+		t.Fatalf("audio-only validation error = %v", err)
+	}
+
+	created, err := adapter.ParseCreate(context.Background(), []byte(`{"data":{"id":"task-bx-1","status":"queued"}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.TaskID != "task-bx-1" || created.Status != StatusPending {
+		t.Fatalf("OpenAiBxinle create result = %#v", created)
+	}
+	poll, err := adapter.BuildPoll(context.Background(), PollContext{Request: request, TaskID: created.TaskID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if poll.Method != "GET" || poll.Path != "/v1/videos/task-bx-1" {
+		t.Fatalf("OpenAiBxinle poll = %#v", poll)
+	}
+	state, err := adapter.ParsePoll(context.Background(), PollContext{Request: request, TaskID: created.TaskID}, []byte(`{"id":"task-bx-1","status":"succeeded","metadata":{"url":"https://cdn.example/result.mp4"}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.Status != StatusSucceeded || state.Result == nil || len(state.Result.Videos) != 1 || state.Result.Videos[0].URL != "https://cdn.example/result.mp4" {
+		t.Fatalf("OpenAiBxinle poll result = %#v", state)
+	}
+	resultAdapter, ok := adapter.(ResultAdapter)
+	if !ok {
+		t.Fatal("OpenAiBxinle adapter does not expose result download")
+	}
+	result, err := resultAdapter.BuildResult(context.Background(), PollContext{Request: request, TaskID: created.TaskID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Method != "GET" || result.Path != "/v1/videos/task-bx-1/content" {
+		t.Fatalf("OpenAiBxinle result = %#v", result)
+	}
+}
+
+func TestOfficialTSAIMapsGatewayContracts(t *testing.T) {
+	minimax := officialPackageAdapter(t, "tsai.yingce-plugin", "tsai-minimax-h3")
+	seedance := officialPackageAdapter(t, "tsai.yingce-plugin", "tsai-seedance-mini")
+	seedream := officialPackageAdapter(t, "tsai.yingce-plugin", "tsai-seedream")
+	chat := officialPackageAdapter(t, "tsai.yingce-plugin", "tsai-chat")
+
+	textRequest := GenerationRequest{Model: "MiniMax/MiniMax-H3", Prompt: "日落时分，镜头缓缓掠过海岸。", Duration: 5, AspectRatio: "16:9", Resolution: "768p"}
+	create, err := minimax.BuildCreate(context.Background(), RequestContext{Request: textRequest})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if create.Method != "POST" || create.Path != "/v1/videos/generations" || create.ContentType != "application/json" {
+		t.Fatalf("TSAI MiniMax create = %#v", create)
+	}
+	body := manifestTestBody(t, create)
+	if body["model"] != textRequest.Model || body["prompt"] != textRequest.Prompt || body["duration"] != float64(5) || body["aspect_ratio"] != "16:9" || body["resolution"] != "768P" {
+		t.Fatalf("TSAI MiniMax text body = %#v", body)
+	}
+
+	frameRequest := GenerationRequest{
+		Model: "MiniMax/MiniMax-H3", Prompt: "让两个画面自然过渡。", Duration: 5, Resolution: "768P",
+		Images: []MediaReference{
+			{URL: "https://cdn.example/last.png", Role: "last_frame", Order: 2},
+			{URL: "https://cdn.example/first.png", Role: "first_frame", Order: 1},
+		},
+	}
+	frameCreate, err := minimax.BuildCreate(context.Background(), RequestContext{Request: frameRequest})
+	if err != nil {
+		t.Fatal(err)
+	}
+	frameBody := manifestTestBody(t, frameCreate)
+	if frameBody["first_frame_image"] != "https://cdn.example/first.png" || frameBody["last_frame_image"] != "https://cdn.example/last.png" {
+		t.Fatalf("TSAI MiniMax frames = %#v", frameBody)
+	}
+	if _, hasImages := frameBody["image_urls"]; hasImages {
+		t.Fatalf("TSAI MiniMax first/last request must not send image_urls: %#v", frameBody)
+	}
+
+	_, err = minimax.BuildCreate(context.Background(), RequestContext{Request: GenerationRequest{
+		Model: "MiniMax/MiniMax-H3", Prompt: "混用素材",
+		Images: []MediaReference{
+			{URL: "https://cdn.example/first.png", Role: "first_frame"},
+			{URL: "https://cdn.example/ref.png", Role: "reference_image"},
+		},
+	}})
+	if err == nil || !strings.Contains(err.Error(), "首尾帧") {
+		t.Fatalf("TSAI MiniMax mixed-role validation = %v", err)
+	}
+	_, err = minimax.BuildCreate(context.Background(), RequestContext{Request: GenerationRequest{Model: "MiniMax/MiniMax-H3", Prompt: "只用音频", Audios: []MediaReference{{URL: "https://cdn.example/voice.mp3"}}}})
+	if err == nil || !strings.Contains(err.Error(), "参考音频") {
+		t.Fatalf("TSAI MiniMax audio-only validation = %v", err)
+	}
+
+	created, err := minimax.ParseCreate(context.Background(), []byte(`{"code":200,"data":[{"status":"submitted","task_id":"task-tsai-1"}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.TaskID != "task-tsai-1" || created.Status != StatusPending {
+		t.Fatalf("TSAI MiniMax create result = %#v", created)
+	}
+	poll, err := minimax.BuildPoll(context.Background(), PollContext{Request: textRequest, TaskID: created.TaskID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if poll.Method != "GET" || poll.Path != "/v1/videos/task-tsai-1" {
+		t.Fatalf("TSAI MiniMax poll = %#v", poll)
+	}
+	state, err := minimax.ParsePoll(context.Background(), PollContext{Request: textRequest, TaskID: created.TaskID}, []byte(`{"code":200,"data":{"id":"task-tsai-1","status":"succeeded","progress":100,"result":{"videos":[{"url":"https://api.alifenqi.com:8188/files/result.mp4"}]}}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.Status != StatusSucceeded || state.Result == nil || len(state.Result.Videos) != 1 || state.Result.Videos[0].URL != "https://api.alifenqi.com:8188/files/result.mp4" {
+		t.Fatalf("TSAI MiniMax poll result = %#v", state)
+	}
+
+	seedanceRequest := GenerationRequest{
+		Model: "doubao-seedance-2-0-mini-260615", Prompt: "参考图片1的主体制作广告。", Duration: 11, AspectRatio: "16:9", Resolution: "720P", GenerateAudio: true,
+		Images: []MediaReference{{URL: "https://cdn.example/subject.jpg", Role: "reference_image", Order: 1}},
+		Videos: []MediaReference{{URL: "https://cdn.example/reference.mp4"}},
+		Audios: []MediaReference{{URL: "https://cdn.example/music.mp3"}},
+	}
+	seedanceCreate, err := seedance.BuildCreate(context.Background(), RequestContext{Request: seedanceRequest})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if seedanceCreate.Path != "/v1/videos/generations" {
+		t.Fatalf("TSAI Seedance create = %#v", seedanceCreate)
+	}
+	seedanceBody := manifestTestBody(t, seedanceCreate)
+	if seedanceBody["ratio"] != "16:9" || seedanceBody["resolution"] != "720p" || seedanceBody["generate_audio"] != true || seedanceBody["mode"] != "reference" {
+		t.Fatalf("TSAI Seedance body = %#v", seedanceBody)
+	}
+	content, _ := seedanceBody["content"].([]any)
+	if len(content) != 4 {
+		t.Fatalf("TSAI Seedance content = %#v", content)
+	}
+	textItem, _ := content[0].(map[string]any)
+	imageItem, _ := content[1].(map[string]any)
+	videoItem, _ := content[2].(map[string]any)
+	audioItem, _ := content[3].(map[string]any)
+	imageURL, _ := imageItem["image_url"].(map[string]any)
+	videoURL, _ := videoItem["video_url"].(map[string]any)
+	audioURL, _ := audioItem["audio_url"].(map[string]any)
+	if textItem["type"] != "text" || textItem["text"] != seedanceRequest.Prompt || imageItem["role"] != "reference_image" || imageURL["url"] != "https://cdn.example/subject.jpg" || videoItem["role"] != "reference_video" || videoURL["url"] != "https://cdn.example/reference.mp4" || audioItem["role"] != "reference_audio" || audioURL["url"] != "https://cdn.example/music.mp3" {
+		t.Fatalf("TSAI Seedance content items = %#v", content)
+	}
+
+	seedreamCreate, err := seedream.BuildCreate(context.Background(), RequestContext{Request: GenerationRequest{
+		Model: "doubao-seedream-4-5-251128", Prompt: "超现实主义的星际列车。", AspectRatio: "16:9",
+		Images: []MediaReference{
+			{URL: "https://cdn.example/person.png", Order: 1},
+			{URL: "https://cdn.example/clothes.png", Order: 2},
+		},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if seedreamCreate.Path != "/v1/images/generations" {
+		t.Fatalf("TSAI Seedream create = %#v", seedreamCreate)
+	}
+	seedreamBody := manifestTestBody(t, seedreamCreate)
+	images, _ := seedreamBody["image"].([]any)
+	if seedreamBody["size"] != "2560x1440" || seedreamBody["sequential_image_generation"] != "disabled" || seedreamBody["response_format"] != "url" || seedreamBody["stream"] != false || len(images) != 2 || images[0] != "https://cdn.example/person.png" {
+		t.Fatalf("TSAI Seedream body = %#v", seedreamBody)
+	}
+	seedreamCreated, err := seedream.ParseCreate(context.Background(), []byte(`{"id":"img-tsai-1","status":"queued","data":[]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if seedreamCreated.TaskID != "img-tsai-1" || seedreamCreated.Status != StatusPending {
+		t.Fatalf("TSAI Seedream create result = %#v", seedreamCreated)
+	}
+	imagePoll, err := seedream.BuildPoll(context.Background(), PollContext{TaskID: seedreamCreated.TaskID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if imagePoll.Path != "/v1/images/generations/img-tsai-1" {
+		t.Fatalf("TSAI Seedream poll = %#v", imagePoll)
+	}
+	imageState, err := seedream.ParsePoll(context.Background(), PollContext{TaskID: seedreamCreated.TaskID}, []byte(`{"id":"img-tsai-1","status":"succeeded","data":[{"url":"https://api.alifenqi.com:8188/files/result.png"}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if imageState.Status != StatusSucceeded || imageState.Result == nil || len(imageState.Result.Images) != 1 || imageState.Result.Images[0].URL != "https://api.alifenqi.com:8188/files/result.png" {
+		t.Fatalf("TSAI Seedream poll result = %#v", imageState)
+	}
+
+	chatCreate, err := chat.BuildCreate(context.Background(), RequestContext{Request: GenerationRequest{Model: "deepseek-v4-flash", Prompt: "用一句话描绘日落中的海岸。"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if chatCreate.Path != "/v1/chat/completions" {
+		t.Fatalf("TSAI chat create = %#v", chatCreate)
+	}
+	chatBody := manifestTestBody(t, chatCreate)
+	if chatBody["model"] != "deepseek-v4-flash" {
+		t.Fatalf("TSAI chat body = %#v", chatBody)
+	}
+}
+
 func officialPackageAdapter(t *testing.T, packageName, providerID string) Adapter {
 	t.Helper()
 	data, err := os.ReadFile(filepath.Join("..", "..", "..", "plugin-packages", packageName))

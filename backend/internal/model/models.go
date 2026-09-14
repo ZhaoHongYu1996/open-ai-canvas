@@ -83,6 +83,7 @@ const (
 	ChannelInterfaceNovitaVideo           ChannelInterfaceType = "novita-video"
 	ChannelInterfaceMiniMaxVideo          ChannelInterfaceType = "minimax-video"
 	ChannelInterfaceOpenAiBxinle          ChannelInterfaceType = "OpenAiBxinle"
+	ChannelInterfaceOpenAiBxinlePlugin    ChannelInterfaceType = "openai-bxinle"
 	ChannelInterfaceAgnesVideo            ChannelInterfaceType = "agnes-video"
 	ChannelInterfaceRunningHubImage       ChannelInterfaceType = "runninghub-workflow-image"
 	ChannelInterfaceRunningHubVideo       ChannelInterfaceType = "runninghub-workflow-video"

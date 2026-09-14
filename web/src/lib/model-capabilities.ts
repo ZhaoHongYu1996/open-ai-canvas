@@ -215,6 +215,21 @@ export function defaultImageCapabilityConfig(protocol?: ModelProtocol, model = "
         image.responseFormat.supported = false;
         image.outputFormat.supported = false;
     }
+    if (protocol === "tsai-seedream") {
+        image.references.promptMaxChars = 20000;
+        image.references.maskSupported = false;
+        image.size = {
+            parameter: "size",
+            values: ["2K", "4K", "2048x2048", "2560x1440", "1440x2560", "2304x1728", "1728x2304"],
+            default: "2K",
+            allowCustom: true,
+        };
+        image.quality.supported = false;
+        image.transparentBackground.supported = false;
+        image.responseFormat.supported = false;
+        image.outputFormat.supported = false;
+        image.maxOutputs = 1;
+    }
     if (protocol === "gemini-image") {
         image.references.maskSupported = false;
         // Gemini Images uses imageConfig.aspectRatio, not the OpenAI-style pixel size field.
@@ -283,7 +298,7 @@ export function defaultModelCapabilityConfig(protocol?: ModelProtocol, model = "
         video.duration = { selection: "enum", values: [4, 6, 8], default: 6 };
         video.resolutions = ["720p", "1080p"];
     }
-    if (protocol === "OpenAiBxinle") {
+    if (protocol === "OpenAiBxinle" || protocol === "openai-bxinle") {
         video.references.maxImages = 9;
         video.references.maxVideos = 3;
         video.references.maxAudios = 3;
@@ -318,6 +333,41 @@ export function defaultModelCapabilityConfig(protocol?: ModelProtocol, model = "
         video.ratios = ["16:9", "9:16", "1:1"];
         video.resolutions = ["1080p"];
         video.defaultResolution = "1080p";
+    }
+    if (protocol === "tsai-minimax-h3") {
+        video.references.promptMaxChars = 7000;
+        video.references.maxImages = 9;
+        video.references.maxImageBytes = 30 * 1024 * 1024;
+        video.references.maxVideos = 3;
+        video.references.maxAudios = 3;
+        video.references.maxVideoBytes = 50 * 1024 * 1024;
+        video.references.maxAudioBytes = 15 * 1024 * 1024;
+        video.references.maxVideoDurationSeconds = 15;
+        video.references.maxAudioDurationSeconds = 15;
+        video.duration = { selection: "range", min: 4, max: 15, step: 1, default: 5 };
+        video.ratios = ["adaptive", "21:9", "16:9", "4:3", "1:1", "3:4", "9:16"];
+        video.defaultRatio = "16:9";
+        video.resolutions = ["480P", "768P", "1080P", "2K"];
+        video.defaultResolution = "768P";
+        video.operations.push("reference_to_video");
+    }
+    if (protocol === "tsai-seedance-mini") {
+        video.references.promptMaxChars = 20000;
+        video.references.maxImages = 9;
+        video.references.maxVideos = 3;
+        video.references.maxAudios = 3;
+        video.references.maxVideoBytes = 200 * 1024 * 1024;
+        video.references.maxAudioBytes = 15 * 1024 * 1024;
+        video.references.maxVideoDurationSeconds = 15;
+        video.references.maxAudioDurationSeconds = 15;
+        video.duration = { selection: "range", min: 4, max: 15, step: 1, default: 5 };
+        video.ratios = ["16:9", "4:3", "1:1", "3:4", "9:16", "21:9", "adaptive"];
+        video.defaultRatio = "16:9";
+        video.resolutions = ["480p", "720p"];
+        video.defaultResolution = "720p";
+        video.generateAudio = { supported: true, default: true };
+        video.watermark = { supported: true, default: false };
+        video.operations.push("reference_to_video");
     }
     if (protocol === "minimax-video") {
         video.references.maxImages = 9;

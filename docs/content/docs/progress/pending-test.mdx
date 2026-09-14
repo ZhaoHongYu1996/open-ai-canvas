@@ -5,6 +5,27 @@ description: 当前项目已实现功能的手工验证清单与未确认边界
 
 # 待测试
 
+## Host Updater 仓库来源
+
+- Host Updater 默认从当前仓库 `ZhaoHongYu1996/open-ai-canvas` 读取 GitHub Release，不再使用 `ddcat-ai/open-ai-canvas`。
+- [ ] 管理后台「系统配置 → 系统更新」展示的仓库为 `ZhaoHongYu1996/open-ai-canvas`。该仓库发布带 Host Updater 资产的 Release 后，检查更新、备份和升级可用。
+
+## TSAI 系统协议插件
+
+- 已把 https://api.alifenqi.com:8188/app/#docs 做成声明式官方包 `plugin-packages/tsai.yingce-plugin`，可在「插件管理」上传导入，也可随官方 `plugin-packages/` 启动安装。
+- 同一包贡献四个 Provider：`tsai-chat`、`tsai-minimax-h3`、`tsai-seedance-mini`、`tsai-seedream`。渠道 Base URL 填 `https://api.alifenqi.com:8188`。
+- 已覆盖 MiniMax 文生/首尾帧、首尾帧与参考素材互斥、音频必须搭配图片或视频、提交数组 `data[0].task_id`、轮询 `result.videos`、Seedance `content[]`、Seedream 尺寸映射与 202 回查、对话路径的协议测试。
+- [ ] 管理后台上传该 `.yingce-plugin` 后，系统协议目录能选到四个 TSAI Provider，系统渠道可保存并用于画布/创作页生成。
+- [ ] 用真实 TSAI Key 验证对话、MiniMax H3 文生/首尾帧/多模态参考、Seedance 2.0 mini 多模态视频，以及 Seedream 4.5 同步完成与 202 断线恢复。
+
+## OpenAiBxinle 系统协议插件
+
+- 已把 ZeroFA / Seedance 兼容视频协议做成声明式官方包 `plugin-packages/openai-bxinle.yingce-plugin`，可在「插件管理」上传导入，也可随官方 `plugin-packages/` 启动安装。Provider ID 为 `openai-bxinle`，使用面包含 `admin.system-channel`。
+- 历史宿主协议 ID `OpenAiBxinle` 仍保留，已有渠道不会被改写。新渠道应选择 `openai-bxinle`。
+- 已覆盖创建字段、首尾帧拆分、音频必须搭配图片或视频、轮询成功状态和 `/content` 结果下载的协议测试。
+- [ ] 管理后台上传该 `.yingce-plugin` 后，系统协议目录能选到 `openai-bxinle`，系统渠道可保存并用于画布/创作页生成。
+- [ ] 用真实 ZeroFA 渠道验证文生视频、单图参考、首尾帧、参考视频/音频，以及结果 URL 失效时的 content 回退下载。
+
 ## v1.2.6.rc3 候选版本发布
 
 - 本版本在 rc2 基础上纳入此前未提交的模型编辑弹窗、协议浏览器、后台切页与画布网格源码及相邻回归测试；版本为 `v1.2.6.rc3`，镜像标签为 `1.2.6.rc3`，不覆盖 rc2。

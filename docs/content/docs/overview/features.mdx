@@ -195,3 +195,31 @@ SEO 标题、描述、可选关键词会投影到浏览器 metadata、Open Graph
 - `web/src/services/api/timeline-tasks.ts`：转写与渲染任务客户端。
 - `backend/internal/service/task_timeline.go`、`task_render.go`、`timeline_render_plan.go`、`transcription_whisper.go`：后端转写、渲染与渲染计划任务。
 - `backend/internal/repository/project_workbench_read.go`：项目概览指标聚合（含成片完成度计数）。
+
+## TSAI 系统协议插件
+
+[TSAI 开发者文档](https://api.alifenqi.com:8188/app/#docs) 已做成可导入的官方系统协议包。管理员可在「插件管理」上传 `plugin-packages/tsai.yingce-plugin`，或随仓库 `plugin-packages/` 在后端启动时自动安装。安装后可在系统渠道和自定义渠道中选择：
+
+- `tsai-chat`：OpenAI 兼容对话，`POST /v1/chat/completions`
+- `tsai-minimax-h3`：MiniMax H3 视频，`POST /v1/videos/generations`
+- `tsai-seedance-mini`：Seedance 2.0 mini 多模态视频，同一提交入口
+- `tsai-seedream`：Seedream 4.5 文生图 / 参考图生图，支持 202 长任务回查
+
+渠道 Base URL 填 `https://api.alifenqi.com:8188`。视频提交从 `data[0].task_id` 取平台任务 ID，再查询 `GET /v1/videos/{task_id}`。公网素材必须直接可下载。
+
+### 相关实现
+
+- `plugin-packages/tsai/`：清单、说明与打包源码。
+- `plugin-packages/tsai.yingce-plugin`：可上传导入的插件包。
+
+## OpenAiBxinle 系统协议插件
+
+ZeroFA / Seedance 兼容视频协议已做成可导入的官方系统协议包。管理员可在「插件管理」上传 `plugin-packages/openai-bxinle.yingce-plugin`，或随仓库 `plugin-packages/` 在后端启动时自动安装。安装后可在系统渠道和自定义渠道中选择 Provider ID `openai-bxinle`。
+
+该包是声明式协议：创建走 `POST /v1/videos`，轮询走 `GET /v1/videos/{id}`，成功后优先下载结果 URL，失败再请求 `GET /v1/videos/{id}/content`。能力边界为 4–15 秒、最多 9 张图 / 3 个视频 / 3 个音频。历史宿主协议 ID `OpenAiBxinle` 仍然可用，已有渠道不会被改写。
+
+### 相关实现
+
+- `plugin-packages/openai-bxinle/`：清单、说明与打包源码。
+- `plugin-packages/openai-bxinle.yingce-plugin`：可上传导入的插件包。
+- `backend/internal/protocol/docs/OpenAiBxinle.md`：历史宿主协议说明。

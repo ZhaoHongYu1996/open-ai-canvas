@@ -1,6 +1,6 @@
 # OpenAiBxinle / ZeroFA Seedance 视频
 
-OpenAiBxinle 是影策内置的宿主实现视频协议，面向 ZeroFA / Seedance 兼容渠道。创建与轮询走 JSON `/v1/videos`，成功后优先下载结果 URL，失败再请求 `GET /v1/videos/{id}/content`。执行路径是 `host:opaibxinle`，不走声明式协议 runner。
+OpenAiBxinle 是影策内置的宿主实现视频协议，面向 ZeroFA / Seedance 兼容渠道。创建与轮询走 JSON `/v1/videos`，成功后优先下载结果 URL，失败再请求 `GET /v1/videos/{id}/content`。历史渠道 ID `OpenAiBxinle` 仍走 `host:opaibxinle`。新装系统协议请导入 `plugin-packages/openai-bxinle.yingce-plugin`，Provider ID 为 `openai-bxinle`，走声明式协议 runner。
 
 ## 接口与鉴权
 

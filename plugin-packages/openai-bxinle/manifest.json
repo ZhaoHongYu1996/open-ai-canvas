@@ -1,0 +1,758 @@
+{
+  "apiVersion": "yingce.plugin/v2",
+  "id": "openai-bxinle",
+  "name": "OpenAiBxinle / ZeroFA Seedance 视频",
+  "version": "1.0.0",
+  "author": "ZeroFA / 影策",
+  "description": "ZeroFA / Seedance 兼容 JSON 视频协议，可导入为系统协议插件。",
+  "enabled": true,
+  "installable": true,
+  "permissions": [
+    "generation.run",
+    "media.read"
+  ],
+  "configuration": {
+    "fields": [
+      {
+        "name": "apiKey",
+        "type": "secret",
+        "label": "API Key",
+        "required": true
+      }
+    ]
+  },
+  "contributes": {
+    "providers": [
+      {
+        "id": "openai-bxinle",
+        "label": "OpenAiBxinle / ZeroFA Seedance 视频",
+        "capabilities": [
+          "video"
+        ],
+        "scopes": [
+          "admin.system-channel",
+          "user.custom-channel",
+          "canvas",
+          "creation",
+          "agent"
+        ],
+        "requiresPublicMediaUrls": false,
+        "auth": {
+          "type": "bearer",
+          "field": "apiKey"
+        },
+        "parameters": [
+          {
+            "name": "model",
+            "type": "string",
+            "required": true,
+            "mapping": "model",
+            "description": "视频模型 ID。"
+          },
+          {
+            "name": "prompt",
+            "type": "string",
+            "required": true,
+            "mapping": "prompt",
+            "description": "视频提示词。"
+          },
+          {
+            "name": "images",
+            "type": "media[]",
+            "required": false,
+            "mapping": "image/first_frame/last_frame",
+            "description": "按 role 拆到参考图、首帧和尾帧。"
+          },
+          {
+            "name": "videos",
+            "type": "media[]",
+            "required": false,
+            "mapping": "reference_video",
+            "description": "参考视频。"
+          },
+          {
+            "name": "audios",
+            "type": "media[]",
+            "required": false,
+            "mapping": "reference_audio",
+            "description": "参考音频；必须同时带图片或视频。"
+          },
+          {
+            "name": "duration",
+            "type": "integer",
+            "required": false,
+            "mapping": "duration",
+            "description": "时长秒数，默认能力范围 4–15。"
+          },
+          {
+            "name": "aspectRatio",
+            "type": "string",
+            "required": false,
+            "mapping": "aspect_ratio",
+            "description": "画幅比例。"
+          },
+          {
+            "name": "resolution",
+            "type": "string",
+            "required": false,
+            "mapping": "resolution",
+            "description": "分辨率档位，发送前转成大写。"
+          },
+          {
+            "name": "generateAudio",
+            "type": "boolean",
+            "required": false,
+            "mapping": "generate_audio/enable_audio",
+            "description": "是否同时生成音频。"
+          },
+          {
+            "name": "watermark",
+            "type": "boolean",
+            "required": false,
+            "mapping": "watermark",
+            "description": "水印开关；本协议默认不发送，可走扩展体。"
+          },
+          {
+            "name": "providerOptions",
+            "type": "object",
+            "required": false,
+            "mapping": "provider-specific fields",
+            "description": "渠道扩展字段。"
+          }
+        ],
+        "validations": [
+          {
+            "assert": {
+              "$gt": [
+                {
+                  "$len": {
+                    "$trim": {
+                      "$ref": "request.prompt"
+                    }
+                  }
+                },
+                0
+              ]
+            },
+            "message": "OpenAiBxinle 需要填写 prompt"
+          },
+          {
+            "assert": {
+              "$lte": [
+                {
+                  "$len": {
+                    "$ref": "request.images"
+                  }
+                },
+                9
+              ]
+            },
+            "message": "OpenAiBxinle 最多支持 9 张参考图片"
+          },
+          {
+            "assert": {
+              "$lte": [
+                {
+                  "$len": {
+                    "$ref": "request.videos"
+                  }
+                },
+                3
+              ]
+            },
+            "message": "OpenAiBxinle 最多支持 3 个参考视频"
+          },
+          {
+            "assert": {
+              "$lte": [
+                {
+                  "$len": {
+                    "$ref": "request.audios"
+                  }
+                },
+                3
+              ]
+            },
+            "message": "OpenAiBxinle 最多支持 3 个参考音频"
+          },
+          {
+            "assert": {
+              "$or": [
+                {
+                  "$eq": [
+                    {
+                      "$len": {
+                        "$ref": "request.audios"
+                      }
+                    },
+                    0
+                  ]
+                },
+                {
+                  "$gt": [
+                    {
+                      "$len": {
+                        "$ref": "request.images"
+                      }
+                    },
+                    0
+                  ]
+                },
+                {
+                  "$gt": [
+                    {
+                      "$len": {
+                        "$ref": "request.videos"
+                      }
+                    },
+                    0
+                  ]
+                }
+              ]
+            },
+            "message": "OpenAiBxinle 的参考音频必须与至少一个图片或视频参考素材同时使用"
+          }
+        ],
+        "create": {
+          "method": "POST",
+          "path": "/v1/videos",
+          "contentType": "application/json",
+          "body": {
+            "$merge": [
+              {
+                "model": {
+                  "$ref": "request.model"
+                },
+                "prompt": {
+                  "$ref": "request.prompt"
+                },
+                "duration": {
+                  "$omitEmpty": {
+                    "$ref": "request.duration"
+                  }
+                },
+                "aspect_ratio": {
+                  "$omitEmpty": {
+                    "$ref": "request.aspectRatio"
+                  }
+                },
+                "resolution": {
+                  "$omitEmpty": {
+                    "$upper": {
+                      "$ref": "request.resolution"
+                    }
+                  }
+                },
+                "generate_audio": {
+                  "$omitEmpty": {
+                    "$ref": "request.generateAudio"
+                  }
+                },
+                "enable_audio": {
+                  "$omitEmpty": {
+                    "$ref": "request.generateAudio"
+                  }
+                },
+                "first_frame": {
+                  "$omitEmpty": {
+                    "$first": {
+                      "$map": {
+                        "from": {
+                          "$filter": {
+                            "from": {
+                              "$sortByOrder": {
+                                "$ref": "request.images"
+                              }
+                            },
+                            "as": "media",
+                            "where": {
+                              "$eq": [
+                                {
+                                  "$ref": "media.role"
+                                },
+                                "first_frame"
+                              ]
+                            }
+                          }
+                        },
+                        "as": "media",
+                        "in": {
+                          "$ref": "media.value"
+                        }
+                      }
+                    }
+                  }
+                },
+                "last_frame": {
+                  "$omitEmpty": {
+                    "$first": {
+                      "$map": {
+                        "from": {
+                          "$filter": {
+                            "from": {
+                              "$sortByOrder": {
+                                "$ref": "request.images"
+                              }
+                            },
+                            "as": "media",
+                            "where": {
+                              "$eq": [
+                                {
+                                  "$ref": "media.role"
+                                },
+                                "last_frame"
+                              ]
+                            }
+                          }
+                        },
+                        "as": "media",
+                        "in": {
+                          "$ref": "media.value"
+                        }
+                      }
+                    }
+                  }
+                },
+                "image": {
+                  "$omitEmpty": {
+                    "$if": {
+                      "condition": {
+                        "$eq": [
+                          {
+                            "$len": {
+                              "$filter": {
+                                "from": {
+                                  "$sortByOrder": {
+                                    "$ref": "request.images"
+                                  }
+                                },
+                                "as": "media",
+                                "where": {
+                                  "$and": [
+                                    {
+                                      "$ne": [
+                                        {
+                                          "$ref": "media.role"
+                                        },
+                                        "first_frame"
+                                      ]
+                                    },
+                                    {
+                                      "$ne": [
+                                        {
+                                          "$ref": "media.role"
+                                        },
+                                        "last_frame"
+                                      ]
+                                    }
+                                  ]
+                                }
+                              }
+                            }
+                          },
+                          1
+                        ]
+                      },
+                      "then": {
+                        "$first": {
+                          "$map": {
+                            "from": {
+                              "$filter": {
+                                "from": {
+                                  "$sortByOrder": {
+                                    "$ref": "request.images"
+                                  }
+                                },
+                                "as": "media",
+                                "where": {
+                                  "$and": [
+                                    {
+                                      "$ne": [
+                                        {
+                                          "$ref": "media.role"
+                                        },
+                                        "first_frame"
+                                      ]
+                                    },
+                                    {
+                                      "$ne": [
+                                        {
+                                          "$ref": "media.role"
+                                        },
+                                        "last_frame"
+                                      ]
+                                    }
+                                  ]
+                                }
+                              }
+                            },
+                            "as": "media",
+                            "in": {
+                              "$ref": "media.value"
+                            }
+                          }
+                        }
+                      },
+                      "else": {
+                        "$map": {
+                          "from": {
+                            "$filter": {
+                              "from": {
+                                "$sortByOrder": {
+                                  "$ref": "request.images"
+                                }
+                              },
+                              "as": "media",
+                              "where": {
+                                "$and": [
+                                  {
+                                    "$ne": [
+                                      {
+                                        "$ref": "media.role"
+                                      },
+                                      "first_frame"
+                                    ]
+                                  },
+                                  {
+                                    "$ne": [
+                                      {
+                                        "$ref": "media.role"
+                                      },
+                                      "last_frame"
+                                    ]
+                                  }
+                                ]
+                              }
+                            }
+                          },
+                          "as": "media",
+                          "in": {
+                            "$ref": "media.value"
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "reference_video": {
+                  "$omitEmpty": {
+                    "$if": {
+                      "condition": {
+                        "$eq": [
+                          {
+                            "$len": {
+                              "$ref": "request.videos"
+                            }
+                          },
+                          1
+                        ]
+                      },
+                      "then": {
+                        "$first": {
+                          "$map": {
+                            "from": {
+                              "$sortByOrder": {
+                                "$ref": "request.videos"
+                              }
+                            },
+                            "as": "media",
+                            "in": {
+                              "$ref": "media.value"
+                            }
+                          }
+                        }
+                      },
+                      "else": {
+                        "$map": {
+                          "from": {
+                            "$sortByOrder": {
+                              "$ref": "request.videos"
+                            }
+                          },
+                          "as": "media",
+                          "in": {
+                            "$ref": "media.value"
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "reference_audio": {
+                  "$omitEmpty": {
+                    "$if": {
+                      "condition": {
+                        "$eq": [
+                          {
+                            "$len": {
+                              "$ref": "request.audios"
+                            }
+                          },
+                          1
+                        ]
+                      },
+                      "then": {
+                        "$first": {
+                          "$map": {
+                            "from": {
+                              "$sortByOrder": {
+                                "$ref": "request.audios"
+                              }
+                            },
+                            "as": "media",
+                            "in": {
+                              "$ref": "media.value"
+                            }
+                          }
+                        }
+                      },
+                      "else": {
+                        "$map": {
+                          "from": {
+                            "$sortByOrder": {
+                              "$ref": "request.audios"
+                            }
+                          },
+                          "as": "media",
+                          "in": {
+                            "$ref": "media.value"
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "mode": {
+                  "$switch": {
+                    "cases": [
+                      {
+                        "when": {
+                          "$and": [
+                            {
+                              "$gt": [
+                                {
+                                  "$len": {
+                                    "$filter": {
+                                      "from": {
+                                        "$ref": "request.images"
+                                      },
+                                      "as": "media",
+                                      "where": {
+                                        "$eq": [
+                                          {
+                                            "$ref": "media.role"
+                                          },
+                                          "first_frame"
+                                        ]
+                                      }
+                                    }
+                                  }
+                                },
+                                0
+                              ]
+                            },
+                            {
+                              "$gt": [
+                                {
+                                  "$len": {
+                                    "$filter": {
+                                      "from": {
+                                        "$ref": "request.images"
+                                      },
+                                      "as": "media",
+                                      "where": {
+                                        "$eq": [
+                                          {
+                                            "$ref": "media.role"
+                                          },
+                                          "last_frame"
+                                        ]
+                                      }
+                                    }
+                                  }
+                                },
+                                0
+                              ]
+                            }
+                          ]
+                        },
+                        "then": "first_last_frame"
+                      },
+                      {
+                        "when": {
+                          "$gt": [
+                            {
+                              "$len": {
+                                "$ref": "request.videos"
+                              }
+                            },
+                            0
+                          ]
+                        },
+                        "then": "video2video"
+                      },
+                      {
+                        "when": {
+                          "$gt": [
+                            {
+                              "$len": {
+                                "$filter": {
+                                  "from": {
+                                    "$ref": "request.images"
+                                  },
+                                  "as": "media",
+                                  "where": {
+                                    "$and": [
+                                      {
+                                        "$ne": [
+                                          {
+                                            "$ref": "media.role"
+                                          },
+                                          "first_frame"
+                                        ]
+                                      },
+                                      {
+                                        "$ne": [
+                                          {
+                                            "$ref": "media.role"
+                                          },
+                                          "last_frame"
+                                        ]
+                                      }
+                                    ]
+                                  }
+                                }
+                              }
+                            },
+                            1
+                          ]
+                        },
+                        "then": "reference2video"
+                      },
+                      {
+                        "when": {
+                          "$gt": [
+                            {
+                              "$len": {
+                                "$ref": "request.images"
+                              }
+                            },
+                            0
+                          ]
+                        },
+                        "then": "image2video"
+                      }
+                    ],
+                    "default": "text2video"
+                  }
+                }
+              },
+              {
+                "$coalesce": [
+                  {
+                    "$ref": "request.providerOptions.openai-bxinle.body"
+                  },
+                  {
+                    "$ref": "request.providerOptions.openai-bxinle.extra_body"
+                  },
+                  {}
+                ]
+              }
+            ]
+          }
+        },
+        "poll": {
+          "method": "GET",
+          "path": "/v1/videos/{{taskId}}",
+          "contentType": "application/json"
+        },
+        "result": {
+          "method": "GET",
+          "path": "/v1/videos/{{taskId}}/content",
+          "contentType": "application/json",
+          "headers": {
+            "Accept": "video/mp4"
+          }
+        },
+        "response": {
+          "taskId": {
+            "$coalesce": [
+              {
+                "$ref": "response.id"
+              },
+              {
+                "$ref": "response.task_id"
+              },
+              {
+                "$ref": "response.taskId"
+              },
+              {
+                "$ref": "response.data.id"
+              },
+              {
+                "$ref": "taskId"
+              }
+            ]
+          },
+          "status": {
+            "$coalesce": [
+              {
+                "$ref": "response.status"
+              },
+              {
+                "$ref": "response.state"
+              },
+              {
+                "$ref": "response.data.status"
+              },
+              "pending"
+            ]
+          },
+          "message": {
+            "$coalesce": [
+              {
+                "$ref": "response.error.message"
+              },
+              {
+                "$ref": "response.message"
+              },
+              {
+                "$ref": "response.fail_reason"
+              }
+            ]
+          },
+          "videos": {
+            "$coalesce": [
+              {
+                "$ref": "response.metadata.url"
+              },
+              {
+                "$ref": "response.data.metadata.url"
+              },
+              {
+                "$ref": "response.output.url"
+              },
+              {
+                "$ref": "response.output.video_url"
+              },
+              {
+                "$ref": "response.video_url"
+              },
+              {
+                "$ref": "response.url"
+              },
+              {
+                "$ref": "response.object"
+              }
+            ]
+          },
+          "errorPaths": [
+            "error.code"
+          ],
+          "resultEphemeral": true
+        }
+      }
+    ]
+  },
+  "documentation": "# OpenAiBxinle / ZeroFA Seedance 视频\n\n本目录是官方系统协议源码。打包后的 `openai-bxinle.yingce-plugin` 可在「插件管理」上传导入，也可随仓库 `plugin-packages/` 在启动时自动安装。本包是声明式协议，不依赖系统宿主 `host:` 执行器。\n\n面向 ZeroFA / Seedance 兼容的 JSON `/v1/videos` 合同：创建与轮询走 JSON，成功后优先使用结果 URL，失败再请求 `GET /v1/videos/{id}/content`。\n\n详细接口见 [docs/interface.md](docs/interface.md)。\n\n---\n\n# OpenAiBxinle / ZeroFA Seedance 视频接口字段\n\n## 协议身份\n\n- 插件 ID：`openai-bxinle`。\n- Provider ID：`openai-bxinle`。\n- 能力：`video`。\n- 默认 Base URL：渠道服务根地址，不要再重复写 `/v1`。\n- 鉴权：渠道密钥，类型 `bearer`。\n- 创建：`POST /v1/videos`。\n- 查询：`GET /v1/videos/{{taskId}}`。\n- 结果下载：`GET /v1/videos/{{taskId}}/content`。\n\n渠道 Base URL 只填协议服务根。本包把相对路径 `/v1/videos` 拼到上游。密钥只由后端渠道中转读取，不要放进浏览器 URL、清单或日志。\n\n## 配置字段\n\n| 字段 | 类型 | 必填 | 说明 |\n| --- | --- | --- | --- |\n| `apiKey` | secret | 是 | API Key |\n\n## 统一字段映射\n\n| 统一字段 | 类型 | 必填 | 实际上游映射 | 说明 |\n| --- | --- | --- | --- | --- |\n| `model` | string | 是 | `model` | 视频模型 ID。 |\n| `prompt` | string | 是 | `prompt` | 视频提示词。 |\n| `images` | media[] | 否 | `image` / `first_frame` / `last_frame` | 按 role 拆到参考图、首帧和尾帧。 |\n| `videos` | media[] | 否 | `reference_video` | 参考视频。 |\n| `audios` | media[] | 否 | `reference_audio` | 参考音频；必须同时带图片或视频。 |\n| `duration` | integer | 否 | `duration` | 时长秒数，默认能力范围 4–15。 |\n| `aspectRatio` | string | 否 | `aspect_ratio` | 画幅比例。 |\n| `resolution` | string | 否 | `resolution` | 分辨率档位，发送前转成大写。 |\n| `generateAudio` | boolean | 否 | `generate_audio` / `enable_audio` | 是否同时生成音频。 |\n| `watermark` | boolean | 否 | `watermark` | 水印开关；本协议默认不发送，可走扩展体。 |\n| `providerOptions` | object | 否 | `provider-specific fields` | 渠道扩展字段。 |\n\n## 创建请求模型与字段清单\n\n下表由本包清单生成，覆盖 body、query、headers 和结果下载中的每个字段。\n\n| 请求位置 | 值或转换表达式 |\n| --- | --- |\n| `create.method` | `\"POST\"` |\n| `create.path` | `\"/v1/videos\"` |\n| `create.contentType` | `\"application/json\"` |\n| `create.body.model` | `request.model` |\n| `create.body.prompt` | `request.prompt` |\n| `create.body.duration` | `request.duration` |\n| `create.body.aspect_ratio` | `request.aspectRatio` |\n| `create.body.resolution` | `request.resolution` 转大写 |\n| `create.body.generate_audio` | `request.generateAudio` |\n| `create.body.enable_audio` | `request.generateAudio` |\n| `create.body.first_frame` | role=`first_frame` 的图片 URL |\n| `create.body.last_frame` | role=`last_frame` 的图片 URL |\n| `create.body.image` | 其余参考图；一张发字符串，多张发数组 |\n| `create.body.reference_video` | 参考视频 URL；一条发字符串，多条发数组 |\n| `create.body.reference_audio` | 参考音频 URL；一条发字符串，多条发数组 |\n| `create.body.mode` | 按素材组合推导 `text2video` / `image2video` / `reference2video` / `first_last_frame` / `video2video` |\n| `poll.method` | `\"GET\"` |\n| `poll.path` | `\"/v1/videos/{{taskId}}\"` |\n| `result.method` | `\"GET\"` |\n| `result.path` | `\"/v1/videos/{{taskId}}/content\"` |\n| `result.headers.Accept` | `\"video/mp4\"` |\n\n## Provider 扩展点\n\n- `providerOptions.openai-bxinle.body`\n- `providerOptions.openai-bxinle.extra_body`\n\n动态模型或网关需要额外字段时，写入上述对象；该对象不是协议本身的固定 schema，不会被清单校验。\n\n## 响应映射表与字段清单\n\n| 映射位置 | 解析路径或转换表达式 |\n| --- | --- |\n| `response.taskId` | `id` / `task_id` / `data.id` |\n| `response.status` | `status` / `state` / `data.status` |\n| `response.message` | `error.message` / `message` / `fail_reason` |\n| `response.videos` | `metadata.url` / `output.url` / `output.video_url` / `url` / `video_url` / `object` |\n| `response.errorPaths` | `error.code` |\n| `response.resultEphemeral` | `true` |\n\n## 响应约定\n\n成功状态接受 `succeeded`、`completed`、`success`、`done`。任务 ID 可能包在 `data` 里。结果 URL 通常短期有效；没有可下载 URL 时，宿主会走 `GET /v1/videos/{id}/content`。HTTP 非 2xx、业务 code 或 error object 记为失败。当前没有取消接口。\n\n<!-- YINGCE_MANIFEST_CONTRACT_START -->\n## Manifest 完整接口定义\n\n以下 JSON 与插件包内实际 `manifest.json` 逐字段一致，覆盖插件身份、权限、配置、鉴权、参数、校验、创建、Agent、查询、取消、结果下载、响应和 Agent 响应映射。`documentation` 字段的值就是当前完整文档；为避免文档在自身内部无限递归，JSON 中仅用等义占位文本表示正文。\n\n```json\n{\n  \"apiVersion\": \"yingce.plugin/v2\",\n  \"id\": \"openai-bxinle\",\n  \"name\": \"OpenAiBxinle / ZeroFA Seedance 视频\",\n  \"version\": \"1.0.0\",\n  \"author\": \"ZeroFA / 影策\",\n  \"description\": \"ZeroFA / Seedance 兼容 JSON 视频协议，可导入为系统协议插件。\",\n  \"enabled\": true,\n  \"installable\": true,\n  \"permissions\": [\n    \"generation.run\",\n    \"media.read\"\n  ],\n  \"configuration\": {\n    \"fields\": [\n      {\n        \"name\": \"apiKey\",\n        \"type\": \"secret\",\n        \"label\": \"API Key\",\n        \"required\": true\n      }\n    ]\n  },\n  \"contributes\": {\n    \"providers\": [\n      {\n        \"id\": \"openai-bxinle\",\n        \"label\": \"OpenAiBxinle / ZeroFA Seedance 视频\",\n        \"capabilities\": [\n          \"video\"\n        ],\n        \"scopes\": [\n          \"admin.system-channel\",\n          \"user.custom-channel\",\n          \"canvas\",\n          \"creation\",\n          \"agent\"\n        ],\n        \"requiresPublicMediaUrls\": false,\n        \"auth\": {\n          \"type\": \"bearer\",\n          \"field\": \"apiKey\"\n        },\n        \"parameters\": [\n          {\n            \"name\": \"model\",\n            \"type\": \"string\",\n            \"required\": true,\n            \"mapping\": \"model\",\n            \"description\": \"视频模型 ID。\"\n          },\n          {\n            \"name\": \"prompt\",\n            \"type\": \"string\",\n            \"required\": true,\n            \"mapping\": \"prompt\",\n            \"description\": \"视频提示词。\"\n          },\n          {\n            \"name\": \"images\",\n            \"type\": \"media[]\",\n            \"required\": false,\n            \"mapping\": \"image/first_frame/last_frame\",\n            \"description\": \"按 role 拆到参考图、首帧和尾帧。\"\n          },\n          {\n            \"name\": \"videos\",\n            \"type\": \"media[]\",\n            \"required\": false,\n            \"mapping\": \"reference_video\",\n            \"description\": \"参考视频。\"\n          },\n          {\n            \"name\": \"audios\",\n            \"type\": \"media[]\",\n            \"required\": false,\n            \"mapping\": \"reference_audio\",\n            \"description\": \"参考音频；必须同时带图片或视频。\"\n          },\n          {\n            \"name\": \"duration\",\n            \"type\": \"integer\",\n            \"required\": false,\n            \"mapping\": \"duration\",\n            \"description\": \"时长秒数，默认能力范围 4–15。\"\n          },\n          {\n            \"name\": \"aspectRatio\",\n            \"type\": \"string\",\n            \"required\": false,\n            \"mapping\": \"aspect_ratio\",\n            \"description\": \"画幅比例。\"\n          },\n          {\n            \"name\": \"resolution\",\n            \"type\": \"string\",\n            \"required\": false,\n            \"mapping\": \"resolution\",\n            \"description\": \"分辨率档位，发送前转成大写。\"\n          },\n          {\n            \"name\": \"generateAudio\",\n            \"type\": \"boolean\",\n            \"required\": false,\n            \"mapping\": \"generate_audio/enable_audio\",\n            \"description\": \"是否同时生成音频。\"\n          },\n          {\n            \"name\": \"watermark\",\n            \"type\": \"boolean\",\n            \"required\": false,\n            \"mapping\": \"watermark\",\n            \"description\": \"水印开关；本协议默认不发送，可走扩展体。\"\n          },\n          {\n            \"name\": \"providerOptions\",\n            \"type\": \"object\",\n            \"required\": false,\n            \"mapping\": \"provider-specific fields\",\n            \"description\": \"渠道扩展字段。\"\n          }\n        ],\n        \"validations\": [\n          {\n            \"assert\": {\n              \"$gt\": [\n                {\n                  \"$len\": {\n                    \"$trim\": {\n                      \"$ref\": \"request.prompt\"\n                    }\n                  }\n                },\n                0\n              ]\n            },\n            \"message\": \"OpenAiBxinle 需要填写 prompt\"\n          },\n          {\n            \"assert\": {\n              \"$lte\": [\n                {\n                  \"$len\": {\n                    \"$ref\": \"request.images\"\n                  }\n                },\n                9\n              ]\n            },\n            \"message\": \"OpenAiBxinle 最多支持 9 张参考图片\"\n          },\n          {\n            \"assert\": {\n              \"$lte\": [\n                {\n                  \"$len\": {\n                    \"$ref\": \"request.videos\"\n                  }\n                },\n                3\n              ]\n            },\n            \"message\": \"OpenAiBxinle 最多支持 3 个参考视频\"\n          },\n          {\n            \"assert\": {\n              \"$lte\": [\n                {\n                  \"$len\": {\n                    \"$ref\": \"request.audios\"\n                  }\n                },\n                3\n              ]\n            },\n            \"message\": \"OpenAiBxinle 最多支持 3 个参考音频\"\n          },\n          {\n            \"assert\": {\n              \"$or\": [\n                {\n                  \"$eq\": [\n                    {\n                      \"$len\": {\n                        \"$ref\": \"request.audios\"\n                      }\n                    },\n                    0\n                  ]\n                },\n                {\n                  \"$gt\": [\n                    {\n                      \"$len\": {\n                        \"$ref\": \"request.images\"\n                      }\n                    },\n                    0\n                  ]\n                },\n                {\n                  \"$gt\": [\n                    {\n                      \"$len\": {\n                        \"$ref\": \"request.videos\"\n                      }\n                    },\n                    0\n                  ]\n                }\n              ]\n            },\n            \"message\": \"OpenAiBxinle 的参考音频必须与至少一个图片或视频参考素材同时使用\"\n          }\n        ],\n        \"create\": {\n          \"method\": \"POST\",\n          \"path\": \"/v1/videos\",\n          \"contentType\": \"application/json\",\n          \"body\": {\n            \"$merge\": [\n              {\n                \"model\": {\n                  \"$ref\": \"request.model\"\n                },\n                \"prompt\": {\n                  \"$ref\": \"request.prompt\"\n                },\n                \"duration\": {\n                  \"$omitEmpty\": {\n                    \"$ref\": \"request.duration\"\n                  }\n                },\n                \"aspect_ratio\": {\n                  \"$omitEmpty\": {\n                    \"$ref\": \"request.aspectRatio\"\n                  }\n                },\n                \"resolution\": {\n                  \"$omitEmpty\": {\n                    \"$upper\": {\n                      \"$ref\": \"request.resolution\"\n                    }\n                  }\n                },\n                \"generate_audio\": {\n                  \"$omitEmpty\": {\n                    \"$ref\": \"request.generateAudio\"\n                  }\n                },\n                \"enable_audio\": {\n                  \"$omitEmpty\": {\n                    \"$ref\": \"request.generateAudio\"\n                  }\n                },\n                \"first_frame\": {\n                  \"$omitEmpty\": {\n                    \"$first\": {\n                      \"$map\": {\n                        \"from\": {\n                          \"$filter\": {\n                            \"from\": {\n                              \"$sortByOrder\": {\n                                \"$ref\": \"request.images\"\n                              }\n                            },\n                            \"as\": \"media\",\n                            \"where\": {\n                              \"$eq\": [\n                                {\n                                  \"$ref\": \"media.role\"\n                                },\n                                \"first_frame\"\n                              ]\n                            }\n                          }\n                        },\n                        \"as\": \"media\",\n                        \"in\": {\n                          \"$ref\": \"media.value\"\n                        }\n                      }\n                    }\n                  }\n                },\n                \"last_frame\": {\n                  \"$omitEmpty\": {\n                    \"$first\": {\n                      \"$map\": {\n                        \"from\": {\n                          \"$filter\": {\n                            \"from\": {\n                              \"$sortByOrder\": {\n                                \"$ref\": \"request.images\"\n                              }\n                            },\n                            \"as\": \"media\",\n                            \"where\": {\n                              \"$eq\": [\n                                {\n                                  \"$ref\": \"media.role\"\n                                },\n                                \"last_frame\"\n                              ]\n                            }\n                          }\n                        },\n                        \"as\": \"media\",\n                        \"in\": {\n                          \"$ref\": \"media.value\"\n                        }\n                      }\n                    }\n                  }\n                },\n                \"image\": {\n                  \"$omitEmpty\": {\n                    \"$if\": {\n                      \"condition\": {\n                        \"$eq\": [\n                          {\n                            \"$len\": {\n                              \"$filter\": {\n                                \"from\": {\n                                  \"$sortByOrder\": {\n                                    \"$ref\": \"request.images\"\n                                  }\n                                },\n                                \"as\": \"media\",\n                                \"where\": {\n                                  \"$and\": [\n                                    {\n                                      \"$ne\": [\n                                        {\n                                          \"$ref\": \"media.role\"\n                                        },\n                                        \"first_frame\"\n                                      ]\n                                    },\n                                    {\n                                      \"$ne\": [\n                                        {\n                                          \"$ref\": \"media.role\"\n                                        },\n                                        \"last_frame\"\n                                      ]\n                                    }\n                                  ]\n                                }\n                              }\n                            }\n                          },\n                          1\n                        ]\n                      },\n                      \"then\": {\n                        \"$first\": {\n                          \"$map\": {\n                            \"from\": {\n                              \"$filter\": {\n                                \"from\": {\n                                  \"$sortByOrder\": {\n                                    \"$ref\": \"request.images\"\n                                  }\n                                },\n                                \"as\": \"media\",\n                                \"where\": {\n                                  \"$and\": [\n                                    {\n                                      \"$ne\": [\n                                        {\n                                          \"$ref\": \"media.role\"\n                                        },\n                                        \"first_frame\"\n                                      ]\n                                    },\n                                    {\n                                      \"$ne\": [\n                                        {\n                                          \"$ref\": \"media.role\"\n                                        },\n                                        \"last_frame\"\n                                      ]\n                                    }\n                                  ]\n                                }\n                              }\n                            },\n                            \"as\": \"media\",\n                            \"in\": {\n                              \"$ref\": \"media.value\"\n                            }\n                          }\n                        }\n                      },\n                      \"else\": {\n                        \"$map\": {\n                          \"from\": {\n                            \"$filter\": {\n                              \"from\": {\n                                \"$sortByOrder\": {\n                                  \"$ref\": \"request.images\"\n                                }\n                              },\n                              \"as\": \"media\",\n                              \"where\": {\n                                \"$and\": [\n                                  {\n                                    \"$ne\": [\n                                      {\n                                        \"$ref\": \"media.role\"\n                                      },\n                                      \"first_frame\"\n                                    ]\n                                  },\n                                  {\n                                    \"$ne\": [\n                                      {\n                                        \"$ref\": \"media.role\"\n                                      },\n                                      \"last_frame\"\n                                    ]\n                                  }\n                                ]\n                              }\n                            }\n                          },\n                          \"as\": \"media\",\n                          \"in\": {\n                            \"$ref\": \"media.value\"\n                          }\n                        }\n                      }\n                    }\n                  }\n                },\n                \"reference_video\": {\n                  \"$omitEmpty\": {\n                    \"$if\": {\n                      \"condition\": {\n                        \"$eq\": [\n                          {\n                            \"$len\": {\n                              \"$ref\": \"request.videos\"\n                            }\n                          },\n                          1\n                        ]\n                      },\n                      \"then\": {\n                        \"$first\": {\n                          \"$map\": {\n                            \"from\": {\n                              \"$sortByOrder\": {\n                                \"$ref\": \"request.videos\"\n                              }\n                            },\n                            \"as\": \"media\",\n                            \"in\": {\n                              \"$ref\": \"media.value\"\n                            }\n                          }\n                        }\n                      },\n                      \"else\": {\n                        \"$map\": {\n                          \"from\": {\n                            \"$sortByOrder\": {\n                              \"$ref\": \"request.videos\"\n                            }\n                          },\n                          \"as\": \"media\",\n                          \"in\": {\n                            \"$ref\": \"media.value\"\n                          }\n                        }\n                      }\n                    }\n                  }\n                },\n                \"reference_audio\": {\n                  \"$omitEmpty\": {\n                    \"$if\": {\n                      \"condition\": {\n                        \"$eq\": [\n                          {\n                            \"$len\": {\n                              \"$ref\": \"request.audios\"\n                            }\n                          },\n                          1\n                        ]\n                      },\n                      \"then\": {\n                        \"$first\": {\n                          \"$map\": {\n                            \"from\": {\n                              \"$sortByOrder\": {\n                                \"$ref\": \"request.audios\"\n                              }\n                            },\n                            \"as\": \"media\",\n                            \"in\": {\n                              \"$ref\": \"media.value\"\n                            }\n                          }\n                        }\n                      },\n                      \"else\": {\n                        \"$map\": {\n                          \"from\": {\n                            \"$sortByOrder\": {\n                              \"$ref\": \"request.audios\"\n                            }\n                          },\n                          \"as\": \"media\",\n                          \"in\": {\n                            \"$ref\": \"media.value\"\n                          }\n                        }\n                      }\n                    }\n                  }\n                },\n                \"mode\": {\n                  \"$switch\": {\n                    \"cases\": [\n                      {\n                        \"when\": {\n                          \"$and\": [\n                            {\n                              \"$gt\": [\n                                {\n                                  \"$len\": {\n                                    \"$filter\": {\n                                      \"from\": {\n                                        \"$ref\": \"request.images\"\n                                      },\n                                      \"as\": \"media\",\n                                      \"where\": {\n                                        \"$eq\": [\n                                          {\n                                            \"$ref\": \"media.role\"\n                                          },\n                                          \"first_frame\"\n                                        ]\n                                      }\n                                    }\n                                  }\n                                },\n                                0\n                              ]\n                            },\n                            {\n                              \"$gt\": [\n                                {\n                                  \"$len\": {\n                                    \"$filter\": {\n                                      \"from\": {\n                                        \"$ref\": \"request.images\"\n                                      },\n                                      \"as\": \"media\",\n                                      \"where\": {\n                                        \"$eq\": [\n                                          {\n                                            \"$ref\": \"media.role\"\n                                          },\n                                          \"last_frame\"\n                                        ]\n                                      }\n                                    }\n                                  }\n                                },\n                                0\n                              ]\n                            }\n                          ]\n                        },\n                        \"then\": \"first_last_frame\"\n                      },\n                      {\n                        \"when\": {\n                          \"$gt\": [\n                            {\n                              \"$len\": {\n                                \"$ref\": \"request.videos\"\n                              }\n                            },\n                            0\n                          ]\n                        },\n                        \"then\": \"video2video\"\n                      },\n                      {\n                        \"when\": {\n                          \"$gt\": [\n                            {\n                              \"$len\": {\n                                \"$filter\": {\n                                  \"from\": {\n                                    \"$ref\": \"request.images\"\n                                  },\n                                  \"as\": \"media\",\n                                  \"where\": {\n                                    \"$and\": [\n                                      {\n                                        \"$ne\": [\n                                          {\n                                            \"$ref\": \"media.role\"\n                                          },\n                                          \"first_frame\"\n                                        ]\n                                      },\n                                      {\n                                        \"$ne\": [\n                                          {\n                                            \"$ref\": \"media.role\"\n                                          },\n                                          \"last_frame\"\n                                        ]\n                                      }\n                                    ]\n                                  }\n                                }\n                              }\n                            },\n                            1\n                          ]\n                        },\n                        \"then\": \"reference2video\"\n                      },\n                      {\n                        \"when\": {\n                          \"$gt\": [\n                            {\n                              \"$len\": {\n                                \"$ref\": \"request.images\"\n                              }\n                            },\n                            0\n                          ]\n                        },\n                        \"then\": \"image2video\"\n                      }\n                    ],\n                    \"default\": \"text2video\"\n                  }\n                }\n              },\n              {\n                \"$coalesce\": [\n                  {\n                    \"$ref\": \"request.providerOptions.openai-bxinle.body\"\n                  },\n                  {\n                    \"$ref\": \"request.providerOptions.openai-bxinle.extra_body\"\n                  },\n                  {}\n                ]\n              }\n            ]\n          }\n        },\n        \"poll\": {\n          \"method\": \"GET\",\n          \"path\": \"/v1/videos/{{taskId}}\",\n          \"contentType\": \"application/json\"\n        },\n        \"result\": {\n          \"method\": \"GET\",\n          \"path\": \"/v1/videos/{{taskId}}/content\",\n          \"contentType\": \"application/json\",\n          \"headers\": {\n            \"Accept\": \"video/mp4\"\n          }\n        },\n        \"response\": {\n          \"taskId\": {\n            \"$coalesce\": [\n              {\n                \"$ref\": \"response.id\"\n              },\n              {\n                \"$ref\": \"response.task_id\"\n              },\n              {\n                \"$ref\": \"response.taskId\"\n              },\n              {\n                \"$ref\": \"response.data.id\"\n              },\n              {\n                \"$ref\": \"taskId\"\n              }\n            ]\n          },\n          \"status\": {\n            \"$coalesce\": [\n              {\n                \"$ref\": \"response.status\"\n              },\n              {\n                \"$ref\": \"response.state\"\n              },\n              {\n                \"$ref\": \"response.data.status\"\n              },\n              \"pending\"\n            ]\n          },\n          \"message\": {\n            \"$coalesce\": [\n              {\n                \"$ref\": \"response.error.message\"\n              },\n              {\n                \"$ref\": \"response.message\"\n              },\n              {\n                \"$ref\": \"response.fail_reason\"\n              }\n            ]\n          },\n          \"videos\": {\n            \"$coalesce\": [\n              {\n                \"$ref\": \"response.metadata.url\"\n              },\n              {\n                \"$ref\": \"response.data.metadata.url\"\n              },\n              {\n                \"$ref\": \"response.output.url\"\n              },\n              {\n                \"$ref\": \"response.output.video_url\"\n              },\n              {\n                \"$ref\": \"response.video_url\"\n              },\n              {\n                \"$ref\": \"response.url\"\n              },\n              {\n                \"$ref\": \"response.object\"\n              }\n            ]\n          },\n          \"errorPaths\": [\n            \"error.code\"\n          ],\n          \"resultEphemeral\": true\n        }\n      }\n    ]\n  },\n  \"documentation\": \"<当前插件的完整 documentation，由 README.md 与 docs/interface.md 拼接而成；为避免 JSON 递归，此处不重复展开正文。>\"\n}\n```\n<!-- YINGCE_MANIFEST_CONTRACT_END -->\n"
+}
