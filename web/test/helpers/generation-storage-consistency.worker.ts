@@ -397,8 +397,32 @@ async function runCanvasBatchCommitRace() {
     const harness = installStorageHarness();
     const previousScope = getActiveUserScope();
     let unregister: (() => void) | undefined;
+    let restoreApiAdapter: (() => void) | undefined;
     try {
         setActiveUserScope("canvas-batch-commit-race");
+        const { apiClient } = await import("../../src/services/api/request");
+        const originalAdapter = apiClient.defaults.adapter;
+        apiClient.defaults.adapter = async (config) => {
+            if (config.url !== "/resources/access") throw new Error(`Unexpected test API request: ${config.method} ${config.url}`);
+            const requests = typeof config.data === "string" ? JSON.parse(config.data) : config.data;
+            const items = (Array.isArray(requests) ? requests : []).map((request: { resourceId: string; variant?: "original" | "playback" }) => ({
+                resourceId: request.resourceId,
+                access: {
+                    resourceId: request.resourceId,
+                    requestedVariant: request.variant || "original",
+                    actualVariant: "original",
+                    url: `https://fixture.example/${request.resourceId}.png`,
+                    delivery: "cdn",
+                    issuedAt: "2026-09-21T00:00:00Z",
+                    refreshAt: "2026-09-21T00:05:00Z",
+                    revision: "fixture",
+                },
+            }));
+            return { data: { code: 0, data: { items }, msg: "ok" }, status: 200, statusText: "OK", headers: {}, config };
+        };
+        restoreApiAdapter = () => {
+            apiClient.defaults.adapter = originalAdapter;
+        };
         const { useCanvasStore, flushCanvasStorePersistence, CANVAS_STORE_KEY } = await import("../../src/stores/canvas/use-canvas-store");
         const { useAssetStore } = await import("../../src/stores/use-asset-store");
         const { applyCanvasGenerationTaskNodeEffect, registerCanvasGenerationLiveProject } = await import("../../src/services/canvas-generation-consumer");
@@ -431,6 +455,7 @@ async function runCanvasBatchCommitRace() {
         return { edited, live: ref.current, restored: stored.state.projects.find((project) => project.id === projectId)?.nodes };
     } finally {
         unregister?.();
+        restoreApiAdapter?.();
         setActiveUserScope(previousScope);
         harness.restore();
     }
