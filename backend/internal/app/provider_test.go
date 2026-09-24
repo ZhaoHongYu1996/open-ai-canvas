@@ -213,7 +213,7 @@ func TestRunVideoTaskUsesDeclarativeAgnesJSONProtocol(t *testing.T) {
 	defer server.Close()
 
 	ctx := withProtocolRegistry(context.Background(), center.registrySnapshot())
-	result, err := runVideoTask(ctx, canvasGenerationInput{
+	result, err := runVideoTaskForTest(ctx, canvasGenerationInput{
 		Mode:            "video",
 		Prompt:          "make it move",
 		Config:          providerConfig{BaseURL: server.URL + "/v1", APIKey: "test-key", InterfaceType: "agnes-video", Model: "agnes-video-2.5", VideoSeconds: "5", Size: "16:9", VQuality: "720P"},
@@ -261,7 +261,7 @@ func TestRunVideoTaskDownloadsAuthenticatedDeclarativeResult(t *testing.T) {
 	defer server.Close()
 
 	ctx := withProtocolRegistry(context.Background(), center.registrySnapshot())
-	result, err := runVideoTask(ctx, canvasGenerationInput{
+	result, err := runVideoTaskForTest(ctx, canvasGenerationInput{
 		Mode: "video", Prompt: "cinematic shot",
 		Config: providerConfig{BaseURL: server.URL, APIKey: "test-key", InterfaceType: "newapi", Model: "sora-2", VideoSeconds: "5", Size: "1280x720"},
 	})
@@ -461,8 +461,16 @@ func TestClaudeAgentBodyMapsOpenAIStyleTools(t *testing.T) {
 		}}},
 		"tool_choice": "required",
 	})
-	if body["system"] != "You are concise." || body["max_tokens"] != 4096 {
+	systemBlocks, _ := body["system"].([]interface{})
+	if len(systemBlocks) != 1 || body["max_tokens"] != 4096 {
 		t.Fatalf("body = %#v", body)
+	}
+	system, _ := systemBlocks[0].(map[string]interface{})
+	if system["text"] != "You are concise." {
+		t.Fatalf("system = %#v", system)
+	}
+	if cache, _ := system["cache_control"].(map[string]interface{}); cache["type"] != "ephemeral" {
+		t.Fatalf("system cache_control = %#v", system["cache_control"])
 	}
 	messages, _ := body["messages"].([]interface{})
 	if len(messages) != 3 {
@@ -472,6 +480,9 @@ func TestClaudeAgentBodyMapsOpenAIStyleTools(t *testing.T) {
 	tool, _ := tools[0].(map[string]interface{})
 	if tool["name"] != "canvas_get_state" || body["tool_choice"].(map[string]interface{})["type"] != "any" {
 		t.Fatalf("tools/choice = %#v / %#v", body["tools"], body["tool_choice"])
+	}
+	if cache, _ := tool["cache_control"].(map[string]interface{}); cache["type"] != "ephemeral" {
+		t.Fatalf("tool cache_control = %#v", tool["cache_control"])
 	}
 }
 
@@ -532,7 +543,121 @@ func TestCanonicalAgentBodiesPreserveAssistantToolCalls(t *testing.T) {
 	}
 }
 
-func TestRunAgentToolTaskFallsBackToolChoice(t *testing.T) {
+func TestRunAgentToolTaskOmitsToolChoiceBeforeThinkingRequest(t *testing.T) {
+	t.Setenv("CANVAS_ALLOW_PRIVATE_UPSTREAMS", "true")
+	forcedChoices := []interface{}{
+		"required",
+		map[string]interface{}{"type": "function", "function": map[string]interface{}{"name": "canvas_get_state"}},
+		"auto",
+	}
+	for _, forcedChoice := range forcedChoices {
+		t.Run(fmt.Sprint(forcedChoice), func(t *testing.T) {
+			requests := 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requests++
+				var body map[string]interface{}
+				if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+					t.Fatalf("decode request: %v", err)
+				}
+				if _, exists := body["tool_choice"]; exists {
+					t.Errorf("thinking request retained tool_choice: %#v", body["tool_choice"])
+				}
+				if body["reasoning_effort"] != "medium" {
+					t.Errorf("thinking was not forwarded: %#v", body["reasoning_effort"])
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"完成","tool_calls":[]}}]}`))
+			}))
+
+			result, err := runAgentToolTask(context.Background(), canvasGenerationInput{
+				Config:        providerConfig{BaseURL: server.URL, APIKey: "key", Model: "thinking-model"},
+				TextOptions:   canvasTextOptions{Thinking: true},
+				AgentRequests: &agentToolRequests{ChatCompletion: map[string]interface{}{"messages": []interface{}{}, "tool_choice": forcedChoice}},
+			})
+			server.Close()
+			if err != nil {
+				t.Fatalf("runAgentToolTask() error = %v", err)
+			}
+			if result["text"] != "完成" || requests != 1 {
+				t.Fatalf("result/requests = %#v / %d", result, requests)
+			}
+		})
+	}
+}
+
+func TestRunAgentToolTaskOmitsExplicitAutomaticToolChoice(t *testing.T) {
+	t.Setenv("CANVAS_ALLOW_PRIVATE_UPSTREAMS", "true")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		if _, exists := body["tool_choice"]; exists {
+			t.Errorf("automatic choice should use the protocol default: %#v", body["tool_choice"])
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"完成","tool_calls":[]}}]}`))
+	}))
+	defer server.Close()
+
+	result, err := runAgentToolTask(context.Background(), canvasGenerationInput{
+		Config:        providerConfig{BaseURL: server.URL, APIKey: "key", Model: "model"},
+		AgentRequests: &agentToolRequests{ChatCompletion: map[string]interface{}{"messages": []interface{}{}, "tool_choice": "auto"}},
+	})
+	if err != nil || result["text"] != "完成" {
+		t.Fatalf("result = %#v, err = %v", result, err)
+	}
+}
+
+func TestRunDeclarativeAgentTaskOmitsToolChoiceBeforeThinkingRequest(t *testing.T) {
+	t.Setenv("CANVAS_ALLOW_PRIVATE_UPSTREAMS", "true")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		if _, exists := body["tool_choice"]; exists {
+			t.Errorf("declarative thinking request retained tool_choice: %#v", body["tool_choice"])
+		}
+		if body["reasoning_effort"] != "medium" {
+			t.Errorf("thinking was not forwarded: %#v", body["reasoning_effort"])
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"完成","tool_calls":[]}}]}`))
+	}))
+	defer server.Close()
+
+	adapter, err := protocol.LoadManifest([]byte(`{
+		"apiVersion":"yingce.plugin/v1",
+		"id":"chat-completion","version":"1.0.0","name":"Chat Completion Test","author":"Test","documentation":"# Test",
+		"contributes":{"providers":[{"id":"chat-completion","label":"Chat Completion Test","capabilities":["text"],"scopes":["agent"],
+		"create":{"method":"POST","path":"/create"},
+		"agent":{"method":"POST","path":"/chat/completions","fields":{"model":"request.model","messages":"request.extra.agent.chatCompletion.messages","tools":"request.extra.agent.chatCompletion.tools","tool_choice":"request.extra.agent.chatCompletion.tool_choice"}},
+		"agentResponse":{"textPaths":["choices.0.message.content"],"toolCallsPath":"choices.0.message.tool_calls","toolCallIdPaths":["id"],"toolCallNamePaths":["function.name"],"toolCallArgumentsPaths":["function.arguments"]},"response":{}}]}
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	registry, err := protocol.NewRegistry(adapter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := runAgentToolTask(withProtocolRegistry(context.Background(), registry), canvasGenerationInput{
+		Config:      providerConfig{BaseURL: server.URL, APIKey: "key", Model: "thinking-model", InterfaceType: "chat-completion"},
+		TextOptions: canvasTextOptions{Thinking: true},
+		AgentRequests: &agentToolRequests{ChatCompletion: map[string]interface{}{
+			"messages": []interface{}{}, "tools": []interface{}{}, "tool_choice": "required",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("runAgentToolTask() error = %v", err)
+	}
+	if result["text"] != "完成" {
+		t.Fatalf("result = %#v", result)
+	}
+}
+
+func TestRunAgentToolTaskFallsBackToolChoiceForImplicitThinking(t *testing.T) {
 	t.Setenv("CANVAS_ALLOW_PRIVATE_UPSTREAMS", "true")
 	var choices []interface{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -541,8 +666,8 @@ func TestRunAgentToolTaskFallsBackToolChoice(t *testing.T) {
 			t.Fatalf("decode request: %v", err)
 		}
 		choice, exists := body["tool_choice"]
-		if body["reasoning_effort"] != "medium" {
-			t.Errorf("thinking was not forwarded: %#v", body["reasoning_effort"])
+		if _, exists := body["reasoning_effort"]; exists {
+			t.Errorf("undeclared thinking should not add reasoning options: %#v", body["reasoning_effort"])
 		}
 		if exists {
 			choices = append(choices, choice)
@@ -561,7 +686,6 @@ func TestRunAgentToolTaskFallsBackToolChoice(t *testing.T) {
 	config := providerConfig{BaseURL: server.URL, APIKey: "key", Model: "thinking-model"}
 	result, err := runAgentToolTask(context.Background(), canvasGenerationInput{
 		Config:        config,
-		TextOptions:   canvasTextOptions{Thinking: true},
 		AgentRequests: &agentToolRequests{ChatCompletion: map[string]interface{}{"messages": []interface{}{}, "tool_choice": "required"}},
 	})
 	if err != nil {
@@ -746,6 +870,10 @@ func TestProviderPayloadErrorMessageUsesSafeActionableCategories(t *testing.T) {
 		{name: "model access", raw: "model not found for tenant secret-id", want: "模型不存在"},
 		{name: "thinking mode rejects forced tool choice", raw: `{"error":{"message":"Thinking mode does not support this tool_choice","request_id":"secret-trace"}}`, want: "不支持强制工具调用"},
 		{name: "reasoning mode rejects forced tool choice", raw: `{"error":{"message":"tool_choice=required is not supported in reasoning mode"}}`, want: "不支持强制工具调用"},
+		// 真实上游原文：一轮里模型发了多个 canvas_inspect_image 调用，历史里的图片
+		// 插在 tool 结果之间，上游按"tool_call_id 没有被回应"拒绝。它含 "insufficient"，
+		// 落到额度类目会把协议错误报成"渠道余额不足"（见 providerPayloadErrorCategory）。
+		{name: "tool call pairing", raw: `{"error":{"message":"An assistant message with 'tool_calls' must be followed by tool messages responding to each 'tool_call_id'. (insufficient tool messages following tool_calls message)","type":"invalid_request_error","request_id":"secret-trace"}}`, want: "工具调用与结果不匹配"},
 		{name: "unknown", raw: "trace_id=private internal stack", want: "模型服务返回失败"},
 	}
 	for _, tt := range tests {
@@ -932,7 +1060,7 @@ func TestProviderPayloadErrorCategoryPrefersProviderCodeOverModerationWording(t 
 
 func TestRunVideoTaskRequiresOfficialPluginWhenRegistryEmpty(t *testing.T) {
 	ctx := withProtocolRegistry(context.Background(), emptyProtocolRegistry)
-	_, err := runVideoTask(ctx, canvasGenerationInput{
+	_, err := runVideoTaskForTest(ctx, canvasGenerationInput{
 		Prompt: "make it move",
 		Config: providerConfig{BaseURL: "https://example.com", APIKey: "key", Model: "MiniMax-H3", InterfaceType: "minimax-video"},
 	})
@@ -1629,7 +1757,7 @@ func TestRunVideoTaskUsesNewAPIForAnyVideoModel(t *testing.T) {
 	}))
 	defer server.Close()
 
-	result, err := runVideoTask(context.Background(), canvasGenerationInput{
+	result, err := runVideoTaskForTest(context.Background(), canvasGenerationInput{
 		Prompt: "make it move",
 		Config: providerConfig{BaseURL: server.URL + "/v1", APIKey: "test-key", Model: "custom-video-v1"},
 	})
@@ -1643,6 +1771,85 @@ func TestRunVideoTaskUsesNewAPIForAnyVideoModel(t *testing.T) {
 	want := "POST /v1/videos,GET /v1/videos/video-1,GET /v1/videos/video-1/content"
 	if got := strings.Join(paths, ","); got != want {
 		t.Fatalf("paths = %q, want %q", got, want)
+	}
+}
+
+func TestRunVideoTaskRetriesTransientPollFailureWithoutRecreating(t *testing.T) {
+	t.Setenv("CANVAS_ALLOW_PRIVATE_UPSTREAMS", "true")
+	createCalls := 0
+	pollCalls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method + " " + r.URL.Path {
+		case "POST /v1/videos":
+			createCalls++
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"id":"video-1","status":"queued"}`))
+		case "GET /v1/videos/video-1":
+			pollCalls++
+			w.Header().Set("Content-Type", "application/json")
+			if pollCalls == 1 {
+				w.WriteHeader(http.StatusServiceUnavailable)
+				_, _ = w.Write([]byte(`{"message":"temporary outage"}`))
+				return
+			}
+			_, _ = w.Write([]byte(`{"id":"video-1","status":"completed"}`))
+		case "GET /v1/videos/video-1/content":
+			w.Header().Set("Content-Type", "video/mp4")
+			_, _ = w.Write([]byte("video"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	result, err := runVideoTaskWithPolicy(context.Background(), canvasGenerationInput{
+		Prompt: "make it move",
+		Config: providerConfig{BaseURL: server.URL + "/v1", APIKey: "test-key", Model: "custom-video-v1"},
+	}, fastVideoPollPolicy())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result["mode"] != "video" || createCalls != 1 || pollCalls != 2 {
+		t.Fatalf("result = %#v, create calls = %d, poll calls = %d", result, createCalls, pollCalls)
+	}
+}
+
+func TestRunVideoTaskRetriesDownloadWithoutRepolling(t *testing.T) {
+	t.Setenv("CANVAS_ALLOW_PRIVATE_UPSTREAMS", "true")
+	pollCalls := 0
+	downloadCalls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method + " " + r.URL.Path {
+		case "POST /v1/videos":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"id":"video-1","status":"queued"}`))
+		case "GET /v1/videos/video-1":
+			pollCalls++
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"id":"video-1","status":"completed"}`))
+		case "GET /v1/videos/video-1/content":
+			downloadCalls++
+			if downloadCalls == 1 {
+				w.WriteHeader(http.StatusBadGateway)
+				return
+			}
+			w.Header().Set("Content-Type", "video/mp4")
+			_, _ = w.Write([]byte("video"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	result, err := runVideoTaskWithPolicy(context.Background(), canvasGenerationInput{
+		Prompt: "make it move",
+		Config: providerConfig{BaseURL: server.URL + "/v1", APIKey: "test-key", Model: "custom-video-v1"},
+	}, fastVideoPollPolicy())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result["mode"] != "video" || pollCalls != 1 || downloadCalls != 2 {
+		t.Fatalf("result = %#v, poll calls = %d, download calls = %d", result, pollCalls, downloadCalls)
 	}
 }
 
@@ -1689,7 +1896,7 @@ func TestRunVideoTaskSendsOnlyDeclaredResolutionName(t *testing.T) {
 			if test.withoutProfile {
 				profile = nil
 			}
-			_, err := runVideoTask(context.Background(), canvasGenerationInput{
+			_, err := runVideoTaskForTest(context.Background(), canvasGenerationInput{
 				Prompt:          "synthetic prompt",
 				Config:          providerConfig{BaseURL: server.URL + "/v1", APIKey: "test-key", Model: "public-video", VideoSeconds: "8", Size: "16:9", VQuality: test.quality},
 				VideoCapability: profile,
@@ -1731,7 +1938,7 @@ func TestRunVideoTaskUsesNestedURLBeforeResultURL(t *testing.T) {
 	}))
 	defer server.Close()
 
-	result, err := runVideoTask(context.Background(), canvasGenerationInput{
+	result, err := runVideoTaskForTest(context.Background(), canvasGenerationInput{
 		Prompt: "make it move",
 		Config: providerConfig{BaseURL: server.URL, APIKey: "test-key", Model: "grok-imagine-video-1.5-1080p", VideoSeconds: "15"},
 	})
@@ -1782,7 +1989,7 @@ func TestRunVideoTaskUsesJSONForGrokVideo(t *testing.T) {
 	}))
 	defer server.Close()
 
-	result, err := runVideoTask(context.Background(), canvasGenerationInput{
+	result, err := runVideoTaskForTest(context.Background(), canvasGenerationInput{
 		Prompt:          "make it move",
 		Config:          providerConfig{BaseURL: server.URL + "/v1", APIKey: "test-key", Model: "grok-video", VideoSeconds: "10"},
 		ReferenceImages: []providerMedia{{ID: "image-1", DataURL: testReferenceImageDataURL}},
@@ -1840,7 +2047,7 @@ func TestRunVideoTaskUsesXAIVideoGenerationEndpoint(t *testing.T) {
 	}))
 	defer server.Close()
 
-	result, err := runVideoTask(context.Background(), canvasGenerationInput{
+	result, err := runVideoTaskForTest(context.Background(), canvasGenerationInput{
 		Prompt: "make it move",
 		Config: providerConfig{
 			BaseURL:       server.URL + "/v1",
@@ -1882,7 +2089,7 @@ func TestRunVideoTaskXAIVideoRejectsUnreachableResultURL(t *testing.T) {
 	}))
 	defer server.Close()
 
-	_, err := runVideoTask(context.Background(), canvasGenerationInput{
+	_, err := runVideoTaskForTest(context.Background(), canvasGenerationInput{
 		Prompt: "make it move",
 		Config: providerConfig{
 			BaseURL:       server.URL + "/v1",
@@ -2021,6 +2228,48 @@ func TestArkPlanConfigStaysSeparateFromSeedanceVideosEndpoint(t *testing.T) {
 	}
 }
 
+func TestArkPlanImageConfigDoesNotUseVideoAssetPath(t *testing.T) {
+	imageConfig := providerConfig{
+		InterfaceType: "volcengine-ark-agent-plan-image",
+		BaseURL:       "https://ark.cn-beijing.volces.com/api/plan/v3",
+		Model:         "doubao-seedream-4-0-250828",
+	}
+	if isArkPlanVideoConfig(imageConfig) {
+		t.Fatal("agent plan image must not match isArkPlanVideoConfig")
+	}
+	if isArkPrivateAssetVideoConfig(imageConfig) {
+		t.Fatal("agent plan image must not trigger ark private asset sync")
+	}
+	if isSeedanceVideoConfig(imageConfig) {
+		t.Fatal("agent plan image must not match isSeedanceVideoConfig")
+	}
+
+	videoConfig := providerConfig{
+		InterfaceType: "volcengine-ark-agent-plan-video",
+		BaseURL:       "https://ark.cn-beijing.volces.com/api/plan/v3",
+		Model:         "doubao-seedance-1-5-pro-251215",
+	}
+	if !isArkPlanVideoConfig(videoConfig) || !isArkPrivateAssetVideoConfig(videoConfig) {
+		t.Fatal("agent plan video should keep video/asset path")
+	}
+}
+
+func TestPrepareArkPrivateAssetReferencesSkipsImageMode(t *testing.T) {
+	svc := &Service{}
+	err := svc.prepareArkPrivateAssetReferences(context.Background(), "user-1", &canvasGenerationInput{
+		Mode: "image",
+		Config: providerConfig{
+			InterfaceType:         "volcengine-ark-agent-plan-image",
+			BaseURL:               "https://ark.cn-beijing.volces.com/api/plan/v3",
+			ArkPrivateAssetUpload: "true",
+		},
+		ReferenceImages: []providerMedia{{StorageKey: "resource:res-1", URL: "https://example.com/ref.png"}},
+	})
+	if err != nil {
+		t.Fatalf("prepareArkPrivateAssetReferences() error = %v", err)
+	}
+}
+
 func TestVolcengineArkVideoProtocolUsesContentTaskAndDownloadsResult(t *testing.T) {
 	t.Setenv("CANVAS_ALLOW_PRIVATE_UPSTREAMS", "true")
 	paths := make([]string, 0, 3)
@@ -2061,7 +2310,7 @@ func TestVolcengineArkVideoProtocolUsesContentTaskAndDownloadsResult(t *testing.
 	}))
 	defer server.Close()
 
-	result, err := runVideoTask(context.Background(), canvasGenerationInput{
+	result, err := runVideoTaskForTest(context.Background(), canvasGenerationInput{
 		Prompt:          "make it move",
 		Config:          providerConfig{BaseURL: server.URL + "/api/v3", APIKey: "test-key", Model: "doubao-seedance-test", InterfaceType: "volcengine-ark-video"},
 		ReferenceImages: []providerMedia{{ID: "start", URL: server.URL + "/reference.png"}},
@@ -2257,7 +2506,7 @@ func TestRunNewAPIChannel1VideoTaskDownloadsSucceededObject(t *testing.T) {
 	}))
 	defer server.Close()
 
-	result, err := runVideoTask(context.Background(), canvasGenerationInput{
+	result, err := runVideoTaskForTest(context.Background(), canvasGenerationInput{
 		Prompt: "make it move",
 		Config: providerConfig{BaseURL: server.URL + "/v1", APIKey: "test-key", Model: "seedance-2.0", InterfaceType: "newapi-channel-1"},
 	})
@@ -2321,7 +2570,7 @@ func TestRunNewAPIChannel2VideoTaskDownloadsTemporaryResult(t *testing.T) {
 	profile := DefaultModelCapabilityConfigForModel("newapi-channel-2", "grok-image-video").Video
 	profile.Resolutions = []string{"720p"}
 	profile.DefaultResolution = "720p"
-	result, err := runVideoTask(context.Background(), canvasGenerationInput{
+	result, err := runVideoTaskForTest(context.Background(), canvasGenerationInput{
 		Prompt: "make it move",
 		Config: providerConfig{BaseURL: server.URL, APIKey: "test-key", Model: "grok-image-video", InterfaceType: "newapi-channel-2", VideoSeconds: "15", Size: "9:16", VQuality: "720", VideoGenerateAudio: "true"},
 		ReferenceImages: []providerMedia{
@@ -2376,7 +2625,7 @@ func TestRunNewAPIChannel2VideoTaskResumesOriginalProviderTaskWithoutAnotherPost
 	ctx := withProviderAnalytics(context.Background(), nil, model.Task{
 		ID: "task-1", Type: "canvas_video", ProviderRequestID: "existing-provider-task", InputJSON: string(inputJSON),
 	})
-	result, err := runVideoTask(ctx, input)
+	result, err := runVideoTaskForTest(ctx, input)
 	if err != nil {
 		t.Fatalf("runVideoTask() error = %v", err)
 	}
@@ -2393,7 +2642,7 @@ func TestRunNewAPIChannel2VideoTaskReturnsTypedDeadlineWhenPollingWindowEnds(t *
 	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
 	defer cancel()
 	ctx = withProviderAnalytics(ctx, nil, model.Task{ID: "task-1", Type: "canvas_video", ProviderRequestID: "existing-provider-task"})
-	_, err := runVideoTask(ctx, canvasGenerationInput{
+	_, err := runVideoTaskForTest(ctx, canvasGenerationInput{
 		Mode:   "video",
 		Config: providerConfig{InterfaceType: string(model.ChannelInterfaceNewAPIChannel2), Model: "video-model", BaseURL: "https://example.com", APIKey: "key"},
 	})
@@ -2427,7 +2676,7 @@ func TestRunGeminiVeoVideoTaskUsesLongRunningOperation(t *testing.T) {
 	}))
 	defer server.Close()
 
-	result, err := runVideoTask(context.Background(), canvasGenerationInput{
+	result, err := runVideoTaskForTest(context.Background(), canvasGenerationInput{
 		Prompt: "make it move",
 		Config: providerConfig{BaseURL: server.URL, APIKey: "test-key", APIFormat: "gemini", Model: "veo-test", InterfaceType: "gemini-veo", VideoSeconds: "6", Size: "16:9", VQuality: "720"},
 	})
@@ -2632,7 +2881,7 @@ func TestRunNovitaVideoTaskDownloadsSucceededVideo(t *testing.T) {
 	}))
 	defer server.Close()
 
-	result, err := runVideoTask(context.Background(), canvasGenerationInput{
+	result, err := runVideoTaskForTest(context.Background(), canvasGenerationInput{
 		Prompt: "make it move",
 		Config: providerConfig{BaseURL: server.URL, APIKey: "test-key", Model: "kling2.5_turbo_pro_t2v", InterfaceType: "novita-video", VideoSeconds: "5", Size: "16:9"},
 	})
@@ -2665,7 +2914,7 @@ func TestRunNovitaVideoTaskReturnsFailureReason(t *testing.T) {
 	}))
 	defer server.Close()
 
-	_, err := runVideoTask(context.Background(), canvasGenerationInput{
+	_, err := runVideoTaskForTest(context.Background(), canvasGenerationInput{
 		Prompt: "make it move",
 		Config: providerConfig{BaseURL: server.URL, APIKey: "test-key", Model: "kling2.5_turbo_pro_t2v", InterfaceType: "novita-video"},
 	})
@@ -2711,7 +2960,7 @@ func TestRunMiniMaxVideoTaskCreatesPollsAndDownloads(t *testing.T) {
 	}))
 	defer server.Close()
 
-	result, err := runVideoTask(context.Background(), canvasGenerationInput{
+	result, err := runVideoTaskForTest(context.Background(), canvasGenerationInput{
 		Mode:   "video",
 		Prompt: "make it move",
 		Config: providerConfig{BaseURL: server.URL, APIKey: "test-key", Model: "MiniMax-H3", InterfaceType: "minimax-video", VideoSeconds: "5", VQuality: "768P", Size: "16:9"},
@@ -2747,7 +2996,7 @@ func TestRunMiniMaxVideoTaskSendsOfficial2KResolution(t *testing.T) {
 		_, _ = w.Write([]byte(`{}`))
 	}))
 	defer server.Close()
-	_, err := runVideoTask(context.Background(), canvasGenerationInput{
+	_, err := runVideoTaskForTest(context.Background(), canvasGenerationInput{
 		Mode: "video", Prompt: "make it move",
 		Config: providerConfig{BaseURL: server.URL, APIKey: "test-key", Model: "MiniMax-H3", InterfaceType: "minimax-video", VideoSeconds: "6", VQuality: "2K"},
 	})
@@ -2792,7 +3041,7 @@ func TestRunMiniMaxVideoTaskUsesExplicitReferenceRoles(t *testing.T) {
 	}))
 	defer server.Close()
 
-	_, err := runVideoTask(context.Background(), canvasGenerationInput{
+	_, err := runVideoTaskForTest(context.Background(), canvasGenerationInput{
 		Mode:            "video",
 		Prompt:          "保持角色一致",
 		Config:          providerConfig{BaseURL: server.URL, APIKey: "test-key", Model: "MiniMax-H3", InterfaceType: "minimax-video", VideoSeconds: "6", VQuality: "768P", Size: "16:9"},
@@ -2821,7 +3070,7 @@ func TestRunMiniMaxVideoTaskReturnsFailureReason(t *testing.T) {
 	}))
 	defer server.Close()
 
-	_, err := runVideoTask(context.Background(), canvasGenerationInput{
+	_, err := runVideoTaskForTest(context.Background(), canvasGenerationInput{
 		Mode:   "video",
 		Prompt: "make it move",
 		Config: providerConfig{BaseURL: server.URL, APIKey: "test-key", Model: "MiniMax-H3", InterfaceType: "minimax-video", VideoSeconds: "6"},

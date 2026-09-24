@@ -13,6 +13,10 @@ export type TextCapabilityConfig = {
     streaming?: boolean;
     /** Whether the model exposes a user-selectable reasoning/thinking mode. */
     thinking?: boolean;
+    /** Total provider input plus output context window, in tokens. */
+    contextWindowTokens: number;
+    /** Provider completion/reasoning output ceiling, in tokens. */
+    maxOutputTokens: number;
     references: {
         promptMaxChars: number;
         maxImages: number;
@@ -23,6 +27,15 @@ export type TextCapabilityConfig = {
 };
 
 export type ImageSizeParameter = "none" | "size" | "aspect_ratio";
+
+/**
+ * 普通视频模型提示词字符数的默认上限。
+ *
+ * 视频提示词由「输入框文本 + 连线内容 + 技能上下文」合成，远长于用户手输内容，
+ * 因此不能沿用偏小的默认值把画布工作流拦在本地。必须与后端
+ * `DefaultVideoPromptMaxChars` 保持一致，否则前端放行后端拒绝（或反之）。
+ */
+export const DEFAULT_VIDEO_PROMPT_MAX_CHARS = 8000;
 
 export type ImageCapabilityConfig = {
     references: {
@@ -108,7 +121,14 @@ function normalizeCapabilityStrings(values: string[]) {
 export function normalizeModelCapabilityConfig(config: ModelCapabilityConfig): ModelCapabilityConfig {
     return {
         ...config,
-        text: config.text ? { ...config.text, streaming: config.text.streaming !== false } : config.text,
+        text: config.text
+            ? {
+                  ...config.text,
+                  streaming: config.text.streaming !== false,
+                  contextWindowTokens: config.text.contextWindowTokens || 128_000,
+                  maxOutputTokens: config.text.maxOutputTokens || 16_384,
+              }
+            : config.text,
         image: config.image
             ? {
                   ...config.image,
@@ -207,7 +227,7 @@ export function defaultImageCapabilityConfig(protocol?: ModelProtocol, model = "
         image.responseFormat = { supported: true };
         image.outputFormat = { supported: false };
         image.maxOutputs = 1;
-    } else if (protocol === "volcengine-ark-image") {
+    } else if (protocol === "volcengine-ark-image" || protocol === "volcengine-ark-agent-plan-image") {
         image.references.maskSupported = false;
         image.quality.supported = false;
         image.transparentBackground.supported = false;
@@ -251,6 +271,26 @@ export function defaultImageCapabilityConfig(protocol?: ModelProtocol, model = "
         image.outputFormat = { supported: false };
         image.maxOutputs = 4;
     }
+    if (protocol === "agnes-image") {
+        // Agnes 图像：size 必填，取 1K/2K/3K/4K 档位或 WxH 精确尺寸，画面比例走独立的 ratio 字段；
+        // 参考图放 extra_body.image，支持多图合成，但没有蒙版端点。
+        image.references.maxImages = 9;
+        image.references.maskSupported = false;
+        image.size = {
+            parameter: "aspect_ratio",
+            values: ["1:1", "3:4", "4:3", "16:9", "9:16", "2:3", "3:2", "21:9"],
+            default: "1:1",
+            allowCustom: false,
+        };
+        // 官方档位是 1K/2K/3K/4K，统一层只提供 1k/2k/4k 三档；3K 保留在协议映射里但不在界面露出。
+        image.quality = { supported: true, values: ["1k", "2k", "4k"], default: "2k" };
+        image.transparentBackground = { supported: false, default: false };
+        // 顶层 response_format 是官方明确的错误写法，输出格式只能在 extra_body 内声明。
+        image.responseFormat = { supported: false };
+        image.outputFormat = { supported: false };
+        // 该端点不接受 n，单次请求固定返回一张图片。
+        image.maxOutputs = 1;
+    }
     if (protocol !== "grok-image" && model.trim().toLowerCase().startsWith("grok-imagine-image")) {
         image.references.maxImages = 0;
         image.references.maskSupported = false;
@@ -272,12 +312,14 @@ export function defaultImageCapabilityConfig(protocol?: ModelProtocol, model = "
 export function defaultModelCapabilityConfig(protocol?: ModelProtocol, model = ""): ModelCapabilityConfig {
     const text: TextCapabilityConfig = {
         streaming: true,
+        contextWindowTokens: 128_000,
+        maxOutputTokens: 16_384,
         // 文本模型的视觉能力必须由管理员明确开启，不能根据模型名猜测。
         references: { promptMaxChars: 32000, maxImages: 0, maxImageBytes: 0, maxVideos: 0, maxVideoBytes: 0 },
     };
     const video: VideoCapabilityConfig = {
         references: {
-            promptMaxChars: 1000,
+            promptMaxChars: DEFAULT_VIDEO_PROMPT_MAX_CHARS,
             minImages: 0,
             maxImages: 9,
             maxImageBytes: 30 * 1024 * 1024,
@@ -288,7 +330,7 @@ export function defaultModelCapabilityConfig(protocol?: ModelProtocol, model = "
             maxAudioBytes: 0,
             maxAudioDurationSeconds: 0,
         },
-        duration: { selection: "range", min: 4, max: 15, step: 1, default: 6 },
+        duration: { selection: "range", min: 1, max: 15, step: 1, default: 6 },
         ratios: ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"],
         defaultRatio: "16:9",
         resolutions: ["480p", "720p", "1080p", "1440p", "2160p"],
@@ -306,21 +348,7 @@ export function defaultModelCapabilityConfig(protocol?: ModelProtocol, model = "
         video.duration = { selection: "enum", values: [4, 6, 8], default: 6 };
         video.resolutions = ["720p", "1080p"];
     }
-    if (protocol === "OpenAiBxinle" || protocol === "openai-bxinle") {
-        video.references.maxImages = 9;
-        video.references.maxVideos = 3;
-        video.references.maxAudios = 3;
-        video.references.maxVideoBytes = 200 * 1024 * 1024;
-        video.references.maxAudioBytes = 15 * 1024 * 1024;
-        video.references.maxVideoDurationSeconds = 15;
-        video.references.maxAudioDurationSeconds = 15;
-        video.duration = { selection: "range", min: 4, max: 15, step: 1, default: 5 };
-        video.defaultRatio = "16:9";
-        video.resolutions = ["720p", "1080p"];
-        video.defaultResolution = "720p";
-        video.generateAudio = { supported: true, default: true };
-    }
-    if (protocol === "volcengine-ark-video" || protocol === "newapi-channel-1" || protocol === "newapi-channel-2") {
+    if (protocol === "volcengine-ark-video" || protocol === "volcengine-ark-agent-plan-video" || protocol === "newapi-channel-1" || protocol === "newapi-channel-2") {
         video.references.maxVideos = 3;
         video.references.maxAudios = 3;
         video.references.maxVideoBytes = 200 * 1024 * 1024;
@@ -329,8 +357,8 @@ export function defaultModelCapabilityConfig(protocol?: ModelProtocol, model = "
         video.references.maxAudioDurationSeconds = 15;
         video.generateAudio = { supported: true, default: true };
     }
-    if (protocol === "volcengine-ark-video" || protocol === "newapi-channel-1") video.resolutions = ["480p", "720p", "1080p"];
-    if (protocol === "volcengine-ark-video") {
+    if (protocol === "volcengine-ark-video" || protocol === "volcengine-ark-agent-plan-video" || protocol === "newapi-channel-1") video.resolutions = ["480p", "720p", "1080p"];
+    if (protocol === "volcengine-ark-video" || protocol === "volcengine-ark-agent-plan-video") {
         video.watermark = { supported: true, default: false };
         video.operations.push("reference_to_video", "audio_to_video");
     }

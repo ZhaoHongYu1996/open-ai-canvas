@@ -9,10 +9,13 @@ import { EditorAssetIngest } from "./editor-asset-ingest";
 import { EditorTranscription } from "./editor-transcription";
 import { EditorExport } from "./editor-export";
 import { EditorAiAssistant } from "./editor-ai-assistant";
+import "./editor-shell.css";
+
+export const EDITOR_SHELL_PLUGIN_ID = "editor-shell";
 
 const manifest: PluginManifestV2 = {
     apiVersion: "yingce.plugin/v2",
-    id: "editor-shell",
+    id: EDITOR_SHELL_PLUGIN_ID,
     name: "剪辑工作台",
     version: "0.1.0",
     description: "注册时间线、预览、检查器、素材、字幕、转写、导出和 AI 编辑八个工作台插槽。",

@@ -93,11 +93,13 @@ func TestVerifyZipBackupRejectsCorruption(t *testing.T) {
 	}
 }
 
-func TestGHCRImageRefLowercasesOwner(t *testing.T) {
-	got := ghcrImageRef("ZhaoHongYu1996/open-ai-canvas", "open-ai-canvas-backend", "v1.2.9")
-	want := "ghcr.io/zhaohongyu1996/open-ai-canvas-backend:1.2.9"
-	if got != want {
-		t.Fatalf("got %q, want %q", got, want)
+func TestImmutableImageRefsUseVersionTag(t *testing.T) {
+	got := immutableImageRefs("zhaohongyu1996/open-ai-canvas", "v1.5.7.1")
+	if got.backend != "ghcr.io/zhaohongyu1996/open-ai-canvas-backend:1.5.7.1" {
+		t.Fatalf("backend image = %q", got.backend)
+	}
+	if got.web != "ghcr.io/zhaohongyu1996/open-ai-canvas-web:1.5.7.1" {
+		t.Fatalf("web image = %q", got.web)
 	}
 }
 

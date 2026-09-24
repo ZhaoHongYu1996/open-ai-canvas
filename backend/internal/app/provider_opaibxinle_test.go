@@ -184,4 +184,3 @@ func TestValidateGenerationInterfaceOpAIBxinle(t *testing.T) {
 		t.Fatal("image should reject video protocol")
 	}
 }
-

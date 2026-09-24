@@ -188,10 +188,10 @@ func doJSON(req *http.Request, target interface{}) error {
 		return err
 	}
 	if !strings.Contains(mimeType, "json") && !json.Valid(data) {
-		return fmt.Errorf("接口返回非 JSON 内容：%s", mimeType)
+		return providerResponseDecodeError{Err: fmt.Errorf("接口返回非 JSON 内容：%s", mimeType)}
 	}
 	if err := json.Unmarshal(data, target); err != nil {
-		return err
+		return providerResponseDecodeError{Err: err}
 	}
 	if payload, ok := target.(*imageResponse); ok {
 		if payload.Error != nil && payload.Error.Message != "" {
@@ -247,7 +247,7 @@ func doBinaryWithConsumer(req *http.Request, onChunk func(string, []byte)) ([]by
 			return nil, "", fmt.Errorf("读取渠道熔断状态失败：%w", err)
 		}
 		if open {
-			return nil, "", errors.New("当前渠道连续失败，已暂时熔断，请稍后重试")
+			return nil, "", providerCircuitOpenError{}
 		}
 		slotID := channelID
 		if slotID == "" {
@@ -271,6 +271,7 @@ func doBinaryWithConsumer(req *http.Request, onChunk func(string, []byte)) ([]by
 	client := OutboundHTTPClient(requestTimeout)
 	resp, err := client.Do(req)
 	if err != nil {
+		err = providerConnectionError(err)
 		if runtimeService != nil {
 			_ = runtimeService.RecordChannelResult(req.Context(), channelID, !errors.Is(err, context.Canceled))
 		}
@@ -304,6 +305,7 @@ func doBinaryWithConsumer(req *http.Request, onChunk func(string, []byte)) ([]by
 			break
 		}
 		if readErr != nil {
+			readErr = providerConnectionError(readErr)
 			recordProviderRequest(req, startedAt, resp.StatusCode, buffered.Bytes(), readErr)
 			return nil, "", readErr
 		}
@@ -327,6 +329,13 @@ func doBinaryWithConsumer(req *http.Request, onChunk func(string, []byte)) ([]by
 		_ = runtimeService.RecordChannelResult(req.Context(), channelID, false)
 	}
 	return data, mimeType, nil
+}
+
+func providerConnectionError(err error) error {
+	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+		return fmt.Errorf("模型服务连接提前关闭，未收到完整结果；请先核对中转站任务和扣费记录，再决定是否重试：%w", err)
+	}
+	return err
 }
 
 func parseRetryAfter(value string, now time.Time) time.Duration {

@@ -3,7 +3,23 @@ package service
 import "infinite-canvas/backend/internal/app"
 
 type (
+	PaymentOrderQuery                      = app.PaymentOrderQuery
+	PaymentReconciliationQuery             = app.PaymentReconciliationQuery
 	CloudAgentRequest                      = app.CloudAgentRequest
+	CloudAgentRunViewOptions               = app.CloudAgentRunViewOptions
+	CloudAgentMediaSettings                = app.CloudAgentMediaSettings
+	CloudAgentCapabilitySet                = app.CloudAgentCapabilitySet
+	AgentProfileRequest                    = app.AgentProfileRequest
+	AgentProfileView                       = app.AgentProfileView
+	AgentLessonView                        = app.AgentLessonView
+	AgentLessonAdminView                   = app.AgentLessonAdminView
+	AgentMemoryRequest                     = app.AgentMemoryRequest
+	AgentMemoryBundle                      = app.AgentMemoryBundle
+	AgentMemoryImportResult                = app.AgentMemoryImportResult
+	AgentMemoryCompactRequest              = app.AgentMemoryCompactRequest
+	AgentMemorySettingRequest              = app.AgentMemorySettingRequest
+	AgentMemoryCompactView                 = app.AgentMemoryCompactView
+	AgentMemoryCompactSummary              = app.AgentMemoryCompactSummary
 	APICallLogPage                         = app.APICallLogPage
 	APICallLogQuery                        = app.APICallLogQuery
 	AccountFileStorageUsage                = app.AccountFileStorageUsage
@@ -53,6 +69,8 @@ type (
 	AnnouncementPage                       = app.AnnouncementPage
 	AppError                               = app.AppError
 	AppearanceSetting                      = app.AppearanceSetting
+	AppearanceSkinButtonFill               = app.AppearanceSkinButtonFill
+	AppearanceSkinButtons                  = app.AppearanceSkinButtons
 	AppearanceSkinComponentTokens          = app.AppearanceSkinComponentTokens
 	AppearanceSkinModeTokens               = app.AppearanceSkinModeTokens
 	AppearanceSkinTheme                    = app.AppearanceSkinTheme
@@ -70,7 +88,7 @@ type (
 	BulkDisableUsersResult                 = app.BulkDisableUsersResult
 	CanvasLibraryPage                      = app.CanvasLibraryPage
 	CanvasLibrarySummary                   = app.CanvasLibrarySummary
-	CanvasProjectsSyncRequest              = app.CanvasProjectsSyncRequest
+	CanvasHistoryList                      = app.CanvasHistoryList
 	CanvasShareRequest                     = app.CanvasShareRequest
 	CanvasShareStatus                      = app.CanvasShareStatus
 	CapabilityMatch                        = app.CapabilityMatch
@@ -81,6 +99,8 @@ type (
 	ChannelModelCatalogOptions             = app.ChannelModelCatalogOptions
 	ChannelModelPriceTierRequest           = app.ChannelModelPriceTierRequest
 	ChannelModelRequest                    = app.ChannelModelRequest
+	ChannelModelRepriceRequest             = app.ChannelModelRepriceRequest
+	ChannelModelQuoteRequest               = app.ChannelModelQuoteRequest
 	ChannelModelSortRequest                = app.ChannelModelSortRequest
 	ChannelModelsRequest                   = app.ChannelModelsRequest
 	ChannelOrderItem                       = app.ChannelOrderItem
@@ -94,6 +114,7 @@ type (
 	ConfirmProjectAssetCandidateRequest    = app.ConfirmProjectAssetCandidateRequest
 	CreateAdminUserRequest                 = app.CreateAdminUserRequest
 	CreateAnnouncementRequest              = app.CreateAnnouncementRequest
+	CreateBannerAnnouncementRequest        = app.CreateBannerAnnouncementRequest
 	CreateAssetCandidatesRequest           = app.CreateAssetCandidatesRequest
 	CreateAssetFolderRequest               = app.CreateAssetFolderRequest
 	CreateAssetVersionRequest              = app.CreateAssetVersionRequest
@@ -233,7 +254,9 @@ type (
 	ResolveBillingBatchResult              = app.ResolveBillingBatchResult
 	ResolveBillingRequest                  = app.ResolveBillingRequest
 	ResourceDelivery                       = app.ResourceDelivery
-	ResourceDeliveryOptions                = app.ResourceDeliveryOptions
+	ResourceAccessOptions                  = app.ResourceAccessOptions
+	ResourceAccessRequest                  = app.ResourceAccessRequest
+	ResourceAccess                         = app.ResourceAccess
 	ResourceStream                         = app.ResourceStream
 	ResponseInterceptionRule               = app.ResponseInterceptionRule
 	ResponseInterceptionSetting            = app.ResponseInterceptionSetting
@@ -261,10 +284,16 @@ type (
 	SkillPackageBundleFile                 = app.SkillPackageBundleFile
 	SkillPackageFileContent                = app.SkillPackageFileContent
 	SkillPackageFileItem                   = app.SkillPackageFileItem
+	SkillPreset                            = app.SkillPreset
 	SkillShowcaseMedia                     = app.SkillShowcaseMedia
 	StorageMigrationSummary                = app.StorageMigrationSummary
 	StyleProfileFavoriteRequest            = app.StyleProfileFavoriteRequest
 	StyleProfileRequest                    = app.StyleProfileRequest
+	ToolItem                               = app.ToolItem
+	ToolList                               = app.ToolList
+	ToolListRequest                        = app.ToolListRequest
+	ToolMutationRequest                    = app.ToolMutationRequest
+	ToolSummary                            = app.ToolSummary
 	SystemPerformanceCacheGroup            = app.SystemPerformanceCacheGroup
 	SystemPerformanceDisk                  = app.SystemPerformanceDisk
 	SystemPerformanceHost                  = app.SystemPerformanceHost
@@ -289,6 +318,7 @@ type (
 	TimelineTranscriptionCreateRequest     = app.TimelineTranscriptionCreateRequest
 	TopupProductRequest                    = app.TopupProductRequest
 	UpdateAnnouncementRequest              = app.UpdateAnnouncementRequest
+	UpdateBannerAnnouncementRequest        = app.UpdateBannerAnnouncementRequest
 	UpdateAssetFolderRequest               = app.UpdateAssetFolderRequest
 	UpdateManager                          = app.UpdateManager
 	UpdatePaymentProviderConfigRequest     = app.UpdatePaymentProviderConfigRequest
@@ -314,3 +344,11 @@ type (
 	WalletSummary                          = app.WalletSummary
 	WorkflowField                          = app.WorkflowField
 )
+
+func CloudAgentCapabilitySetInfo() CloudAgentCapabilitySet {
+	return app.CloudAgentCapabilitySetInfo()
+}
+
+func CloudAgentSupportedToolNames() []string {
+	return app.CloudAgentSupportedToolNames()
+}

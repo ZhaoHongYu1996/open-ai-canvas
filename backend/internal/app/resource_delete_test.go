@@ -11,7 +11,6 @@ import (
 	"infinite-canvas/backend/internal/model"
 	"infinite-canvas/backend/internal/repository"
 
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
 
@@ -143,7 +142,7 @@ func TestDeleteAssetDatabaseFailureLeavesPhysicalObjectAndNoOutbox(t *testing.T)
 		t.Fatal(err)
 	}
 
-	if err := svc.deleteUserAssetWithResources("user-1", "asset-1"); err == nil {
+	if err := svc.deleteUserAssetWithResources("user-1", "asset-1", false); err == nil {
 		t.Fatal("forced database failure should be returned")
 	}
 	if _, err := os.Stat(resourcePath); err != nil {
@@ -225,6 +224,123 @@ func TestDeleteAssetStillRejectsLiveCanvasResourceReference(t *testing.T) {
 	}
 }
 
+func TestDeleteGeneratedAssetTaskReferences(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		status model.TaskStatus
+		input  bool
+		canvas bool
+		block  bool
+	}{
+		{name: "completed output", status: model.TaskStatusSucceeded},
+		{name: "failed output", status: model.TaskStatusFailed},
+		{name: "cancelled output", status: model.TaskStatusCancelled},
+		{name: "running output", status: model.TaskStatusRunning, block: true},
+		{name: "queued output", status: model.TaskStatusQueued, block: true},
+		{name: "unknown status", block: true},
+		{name: "completed input", status: model.TaskStatusSucceeded, input: true, block: true},
+		{name: "completed output on canvas", status: model.TaskStatusSucceeded, canvas: true, block: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			svc, db, _ := newResourceDeletionTestService(t)
+			payload := `{"url":"/api/resources/generated-resource/file"}`
+			resource := model.Resource{ID: "generated-resource", UserID: "user-1", Provider: "unsupported-test-provider", ObjectKey: "generated.png", Status: model.ResourceStatusReady}
+			asset := model.Asset{ID: "generated-asset", UserID: "user-1", Title: "生成图片", PayloadJSON: payload}
+			task := model.Task{ID: "generation-task", UserID: "user-1", Prompt: "生成图片", Status: tc.status, InputJSON: `{}`, ResultJSON: payload}
+			if tc.input {
+				task.InputJSON = payload
+			}
+			items := []any{&resource, &asset, &task,
+				&model.TaskLog{ID: "generation-log", UserID: "user-1", TaskID: task.ID, Payload: payload},
+				&model.Result{ID: "generation-result", UserID: "user-1", TaskID: task.ID, URL: "/api/resources/generated-resource/file", Payload: payload},
+			}
+			if tc.canvas {
+				items = append(items, &model.CanvasProject{ID: "canvas", UserID: "user-1", Title: "使用中的画布", PayloadJSON: payload})
+			}
+			for _, item := range items {
+				if err := db.Create(item).Error; err != nil {
+					t.Fatal(err)
+				}
+			}
+			// 自动孤儿清理仍须保留生成历史中的产物，不能扩大为自动删除。
+			if err := svc.cleanupDetachedUserResources("user-1", []model.Resource{resource}); err != nil {
+				t.Fatal(err)
+			}
+			remaining, err := svc.repo.ResourcesForUserIDs("user-1", []string{resource.ID})
+			if err != nil || len(remaining) != 1 {
+				t.Fatalf("automatic cleanup must keep task output: resources=%v, error=%v", remaining, err)
+			}
+			err = svc.DeleteUserAsset("user-1", asset.ID)
+			if (err != nil) != tc.block {
+				t.Fatalf("DeleteUserAsset() = %v, want blocked=%v", err, tc.block)
+			}
+			wantRemaining, wantJobs := int64(0), int64(1)
+			if tc.block {
+				wantRemaining, wantJobs = 1, 0
+			}
+			for _, check := range []struct {
+				model any
+				want  int64
+			}{
+				{&model.Asset{}, wantRemaining}, {&model.Resource{}, wantRemaining},
+				{&model.ResourceDeletionJob{}, wantJobs},
+				{&model.Task{}, 1}, {&model.TaskLog{}, 1}, {&model.Result{}, 1},
+			} {
+				var count int64
+				if err := db.Model(check.model).Count(&count).Error; err != nil {
+					t.Fatal(err)
+				}
+				if count != check.want {
+					t.Fatalf("%T count=%d, want %d", check.model, count, check.want)
+				}
+			}
+		})
+	}
+}
+
+func TestPurgeConfirmedAssetPreservesTaskReferences(t *testing.T) {
+	svc, db, _ := newResourceDeletionTestService(t)
+	payload := `{"url":"/api/resources/purge-confirmed-resource/file"}`
+	resource := model.Resource{
+		ID: "purge-confirmed-resource", UserID: "user-1", Provider: "unsupported-test-provider",
+		ObjectKey: "purge-confirmed.png", Status: model.ResourceStatusReady,
+	}
+	asset := model.Asset{
+		ID: "purge-confirmed-asset", UserID: "user-1", Title: "本地已在回收站的素材",
+		Status: model.AssetVersionStatusConfirmed, PayloadJSON: payload,
+	}
+	task := model.Task{
+		ID: "purge-confirmed-task", UserID: "user-1", Prompt: "将图片拆分为可独立编辑的图层",
+		Status: model.TaskStatusRunning, InputJSON: payload, ResultJSON: payload,
+	}
+	for _, item := range []any{&resource, &asset, &task} {
+		if err := db.Create(item).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := svc.PurgeUserAsset("user-1", asset.ID); err == nil || !strings.Contains(err.Error(), "任务") {
+		t.Fatalf("PurgeUserAsset() ignored active task: %v", err)
+	}
+	for _, check := range []struct {
+		model any
+		want  int64
+	}{
+		{&model.Asset{}, 1},
+		{&model.Resource{}, 1},
+		{&model.ResourceDeletionJob{}, 0},
+		{&model.Task{}, 1},
+	} {
+		var count int64
+		if err := db.Model(check.model).Count(&count).Error; err != nil {
+			t.Fatal(err)
+		}
+		if count != check.want {
+			t.Fatalf("%T count=%d, want %d", check.model, count, check.want)
+		}
+	}
+}
+
 func TestResourceDeletionWorkerRemovesObjectAndCompletesOutbox(t *testing.T) {
 	svc, db, dataDir := newResourceDeletionTestService(t)
 	objectKey := "users/user-1/image/queued.png"
@@ -257,7 +373,7 @@ func TestResourceDeletionWorkerRemovesObjectAndCompletesOutbox(t *testing.T) {
 	}
 }
 
-func TestExpiredArchivedAssetCleanupRespectsCanvasReferencesAndUsesDeletionOutbox(t *testing.T) {
+func TestExpiredArchivedAssetCleanupPreservesReferencedAsset(t *testing.T) {
 	svc, db, _ := newResourceDeletionTestService(t)
 	old := time.Now().Add(-45 * 24 * time.Hour)
 	resource := model.Resource{
@@ -291,24 +407,7 @@ func TestExpiredArchivedAssetCleanupRespectsCanvasReferencesAndUsesDeletionOutbo
 		t.Fatal(err)
 	}
 	if assetCount != 1 || resourceCount != 1 || jobCount != 0 {
-		t.Fatalf("referenced archived asset cleanup changed data: asset=%d resource=%d jobs=%d", assetCount, resourceCount, jobCount)
-	}
-
-	if err := db.Delete(&model.CanvasProject{}, "id = ? AND user_id = ?", canvas.ID, canvas.UserID).Error; err != nil {
-		t.Fatal(err)
-	}
-	svc.cleanupExpiredArchivedAssets()
-	if err := db.Model(&model.Asset{}).Where("id = ?", asset.ID).Count(&assetCount).Error; err != nil {
-		t.Fatal(err)
-	}
-	if err := db.Model(&model.Resource{}).Where("id = ?", resource.ID).Count(&resourceCount).Error; err != nil {
-		t.Fatal(err)
-	}
-	if err := db.Model(&model.ResourceDeletionJob{}).Where("resource_id = ?", resource.ID).Count(&jobCount).Error; err != nil {
-		t.Fatal(err)
-	}
-	if assetCount != 0 || resourceCount != 0 || jobCount != 1 {
-		t.Fatalf("unreferenced archived asset did not use deletion outbox: asset=%d resource=%d jobs=%d", assetCount, resourceCount, jobCount)
+		t.Fatalf("referenced archived asset was removed: asset=%d resource=%d jobs=%d", assetCount, resourceCount, jobCount)
 	}
 }
 
@@ -435,13 +534,12 @@ func TestDetachedFailedResourceWithoutObjectKeyNeedsNoDeletionJob(t *testing.T) 
 
 func newResourceDeletionTestService(t *testing.T) (*Service, *gorm.DB, string) {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open("file:"+newID()+"?mode=memory&cache=shared"), &gorm.Config{})
-	if err != nil {
-		t.Fatal(err)
-	}
+	db := newSQLiteTestDB(t)
 	if err := database.MigrateSchema(db); err != nil {
 		t.Fatal(err)
 	}
 	dataDir := t.TempDir()
-	return New(repository.New(db), dataDir), db, dataDir
+	svc := New(repository.New(db), dataDir)
+	startDeletionTestWorkers(t, svc)
+	return svc, db, dataDir
 }

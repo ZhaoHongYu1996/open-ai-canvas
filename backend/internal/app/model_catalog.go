@@ -8,23 +8,20 @@ import (
 	"infinite-canvas/backend/internal/model"
 )
 
-// ModelCatalogSource 决定 ModelCatalogResponse 中哪一个集合具有语义。
-// frontend 与 system 的数据形状互斥，调用方不能把缺失集合解释成空目录。
+// ModelCatalogSource 标识创作目录来自系统渠道模型。
 type ModelCatalogSource string
 
 const (
-	// ModelCatalogSourceFrontend 表示目录由前台逻辑模型组成。
-	ModelCatalogSourceFrontend ModelCatalogSource = "frontend"
 	// ModelCatalogSourceSystem 表示目录由脱敏后的系统渠道与渠道模型组成。
 	ModelCatalogSourceSystem ModelCatalogSource = "system"
 )
 
 // ModelCatalogResponse 是创作端模型选择的统一读模型。
-// Source=frontend 时读取 Models；Source=system 时读取 Channels。
+// Channels 为唯一数据源；Models 固定为空，两个集合始终序列化为数组。
 type ModelCatalogResponse struct {
 	Source   ModelCatalogSource     `json:"source"`
-	Models   []PublicLogicalModel   `json:"models,omitempty"`
-	Channels []PublicChannelCatalog `json:"channels,omitempty"`
+	Models   []PublicLogicalModel   `json:"models"`
+	Channels []PublicChannelCatalog `json:"channels"`
 }
 
 // PublicChannelCatalog 公开的渠道目录信息（脱敏）
@@ -40,6 +37,9 @@ type PublicChannelCatalog struct {
 type PublicChannelModel struct {
 	ID               string                        `json:"id"`
 	ModelKey         string                        `json:"modelKey"`
+	ChannelLabel     string                        `json:"channelLabel"`
+	Tags             []model.ChannelModelTag       `json:"tags"`
+	Description      string                        `json:"description"`
 	DisplayName      string                        `json:"displayName"`
 	SortOrder        int                           `json:"sortOrder"`
 	Icon             string                        `json:"icon"`
@@ -66,33 +66,18 @@ type PublicChannelModelPriceTier struct {
 	CachedTokenPriceMicrocredits int64             `json:"cachedTokenPriceMicrocredits"`
 }
 
-// ModelCatalog 按功能开关返回互斥的数据形状：frontend 使用 Models，system 使用 Channels。
+// ModelCatalog 的创作端目录始终来自系统渠道模型，不反查逻辑模型或路由。
 // 系统渠道目录只负责安全发布可解释的读模型；任务创建仍会用持久化能力与价格档再次强校验。
 func (s *Service) ModelCatalog(intent *ModelRequestIntent) (*ModelCatalogResponse, error) {
-	frontendEnabled, err := s.FeatureEnabled(FeatureFrontendModels)
-	if err != nil {
-		return nil, err
-	}
-
-	if frontendEnabled {
-		models, err := s.PublicLogicalModels(intent)
-		if err != nil {
-			return nil, err
-		}
-		return &ModelCatalogResponse{
-			Source: ModelCatalogSourceFrontend,
-			Models: models,
-		}, nil
-	}
-
+	// 两个集合都初始化成非 nil 空切片：空目录要发 []，不能因为“没有模型”而丢掉字段。
+	response := &ModelCatalogResponse{Models: []PublicLogicalModel{}, Channels: []PublicChannelCatalog{}}
 	channels, err := s.publicSystemChannelCatalog(intent)
 	if err != nil {
 		return nil, err
 	}
-	return &ModelCatalogResponse{
-		Source:   ModelCatalogSourceSystem,
-		Channels: channels,
-	}, nil
+	response.Source = ModelCatalogSourceSystem
+	response.Channels = append(response.Channels, channels...)
+	return response, nil
 }
 
 // publicSystemChannelCatalog 组装普通用户可见的系统渠道读模型，不暴露密钥、Base URL 等执行凭证。
@@ -144,8 +129,8 @@ func (s *Service) publicSystemChannelCatalog(intent *ModelRequestIntent) ([]Publ
 		if len(publicModels) > 0 {
 			result = append(result, PublicChannelCatalog{
 				ID:          channel.ID,
-				Name:        channel.PublicName(),
-				DisplayName: channel.PublicName(),
+				Name:        channel.Name,
+				DisplayName: channel.Name,
 				SortOrder:   channel.SortOrder,
 				Models:      publicModels,
 			})
@@ -200,6 +185,9 @@ func (s *Service) sanitizeChannelModel(cm *model.ChannelModel) (PublicChannelMod
 	return PublicChannelModel{
 		ID:               cm.ID,
 		ModelKey:         cm.ModelKey,
+		ChannelLabel:     cm.ChannelLabel,
+		Tags:             cm.Tags,
+		Description:      cm.Description,
 		DisplayName:      cm.DisplayName,
 		SortOrder:        cm.SortOrder,
 		Icon:             cm.Icon,

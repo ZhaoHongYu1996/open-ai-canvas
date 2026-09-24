@@ -246,7 +246,7 @@ func (s *Service) CommitCreationCanvas(userID, id string, req CreationRequest) (
 		if err = validateStructuredStorageQuotaWithPolicy(usage, "canvas", false, int64(len(req.Document)-len(previous)), policy.Resource); err != nil {
 			return err
 		}
-		if err = repo.CompareSaveCreationCanvas(canvas, previous); err != nil {
+		if err = saveCreationCanvasWithHistory(repo, canvas, previous); err != nil {
 			return err
 		}
 		out = map[string]any{"snapshotHash": creationHash(doc)}
@@ -432,13 +432,8 @@ func creationAddedNode(op CreationCanvasOp) map[string]any {
 		width, height, title = capability.DefaultWidth, capability.DefaultHeight, capability.Label
 	}
 	metadata := map[string]any{"content": "", "status": "idle"}
-	switch op.NodeType {
-	case "frame":
-		metadata = map[string]any{"frame": map[string]any{"collapsed": false, "expandedWidth": width, "expandedHeight": height}}
-	case "script":
-		metadata = map[string]any{"status": "idle", "workflowKind": "script", "storyboard": map[string]any{"rows": []any{}, "visibleColumns": []any{"shotNumber", "durationSeconds", "videoMotionPrompt", "dialogue", "assets"}, "referenceNodeIds": []any{}}}
-	case "text":
-		metadata["fontSize"] = float64(14)
+	if known && op.Metadata == nil {
+		metadata = capability.Metadata("")
 	}
 	if op.Width != nil {
 		width = *op.Width

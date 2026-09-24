@@ -75,10 +75,11 @@ type AdminUserReference struct {
 }
 
 type AdminChannelReference struct {
-	ID      string   `json:"id"`
-	Name    string   `json:"name"`
-	Enabled bool     `json:"enabled"`
-	Models  []string `json:"models"`
+	ID                string   `json:"id"`
+	Name              string   `json:"name"`
+	Enabled           bool     `json:"enabled"`
+	Models            []string `json:"models"`
+	ModelDisplayNames []string `json:"modelDisplayNames"`
 }
 
 type AdminReferenceData struct {
@@ -88,7 +89,6 @@ type AdminReferenceData struct {
 
 type ChannelRequest struct {
 	Name                 string           `json:"name"`
-	PublicAlias          *string          `json:"publicAlias"`
 	SortOrder            *int             `json:"sortOrder"`
 	BaseURL              string           `json:"baseUrl"`
 	APIKey               string           `json:"apiKey"`
@@ -106,7 +106,6 @@ type PublicModelChannel struct {
 	Scope            model.ChannelScope        `json:"scope"`
 	Enabled          bool                      `json:"enabled"`
 	Name             string                    `json:"name"`
-	PublicAlias      string                    `json:"publicAlias,omitempty"`
 	SortOrder        int                       `json:"sortOrder"`
 	BaseURL          string                    `json:"baseUrl"`
 	APIKey           string                    `json:"apiKey"`
@@ -124,6 +123,9 @@ type PublicModelChannel struct {
 type PublicChannelModelPrice struct {
 	Model                        string                     `json:"model"`
 	DisplayName                  string                     `json:"displayName"`
+	ChannelLabel                 string                     `json:"channelLabel"`
+	Tags                         []model.ChannelModelTag    `json:"tags"`
+	Description                  string                     `json:"description"`
 	Icon                         string                     `json:"icon"`
 	Capability                   string                     `json:"capability"`
 	Protocol                     model.ChannelInterfaceType `json:"protocol"`
@@ -186,6 +188,18 @@ func (s *Service) AdminReferences(actor *model.User) (*AdminReferenceData, error
 	if err != nil {
 		return nil, err
 	}
+	channelIDs := make([]string, 0, len(channels))
+	for _, channel := range channels {
+		channelIDs = append(channelIDs, channel.ID)
+	}
+	channelModels, err := s.repo.ChannelModelReferences(channelIDs)
+	if err != nil {
+		return nil, err
+	}
+	modelsByChannel := make(map[string][]model.ChannelModel, len(channels))
+	for _, item := range channelModels {
+		modelsByChannel[item.ChannelID] = append(modelsByChannel[item.ChannelID], item)
+	}
 	result := &AdminReferenceData{
 		Users:    make([]AdminUserReference, 0, len(users)),
 		Channels: make([]AdminChannelReference, 0, len(channels)),
@@ -194,15 +208,16 @@ func (s *Service) AdminReferences(actor *model.User) (*AdminReferenceData, error
 		result.Users = append(result.Users, AdminUserReference{ID: user.ID, Username: user.Username, DisplayName: user.DisplayName})
 	}
 	for _, channel := range channels {
-		items, itemErr := s.repo.ChannelModels(channel.ID, false)
-		if itemErr != nil {
-			return nil, itemErr
-		}
+		items := modelsByChannel[channel.ID]
 		models := make([]string, 0, len(items))
+		displayNames := make([]string, 0, len(items))
 		for _, item := range items {
-			models = append(models, item.ModelKey)
+			if item.Enabled {
+				models = append(models, item.ModelKey)
+			}
+			displayNames = append(displayNames, firstNonEmpty(strings.TrimSpace(item.DisplayName), item.ModelKey))
 		}
-		result.Channels = append(result.Channels, AdminChannelReference{ID: channel.ID, Name: channel.Name, Enabled: channel.Enabled, Models: uniqueNonEmpty(models)})
+		result.Channels = append(result.Channels, AdminChannelReference{ID: channel.ID, Name: channel.Name, Enabled: channel.Enabled, Models: uniqueNonEmpty(models), ModelDisplayNames: uniqueNonEmpty(displayNames)})
 	}
 	return result, nil
 }
@@ -539,6 +554,93 @@ func (s *Service) CreateSystemChannel(actor *model.User, req ChannelRequest) (*P
 	return &public, nil
 }
 
+func (s *Service) DuplicateSystemChannel(actor *model.User, id string) (*PublicModelChannel, error) {
+	if err := s.RequireAdmin(actor); err != nil {
+		return nil, err
+	}
+	source, err := s.adminSystemChannel(id)
+	if err != nil {
+		return nil, err
+	}
+	sourceModels, err := s.repo.ChannelModels(source.ID, true)
+	if err != nil {
+		return nil, err
+	}
+	if len(sourceModels) == 0 {
+		for _, name := range channelModelNames(*source) {
+			sourceModels = append(sourceModels, model.ChannelModel{ModelKey: name, ProviderModelKey: name, DisplayName: name, BillingMode: "fixed_request", Enabled: false, PriceVersion: 1})
+		}
+	}
+	channelID, err := s.repo.NextPrefixedID("CHANNEL")
+	if err != nil {
+		return nil, err
+	}
+	channel := *source
+	channel.ID = channelID
+	channel.UserID = actor.ID
+	channel.Scope = model.ChannelScopeSystem
+	channel.Name = duplicateChannelName(source.Name)
+	channel.CreatedAt = time.Time{}
+	channel.UpdatedAt = time.Time{}
+	channel.DeletedAt = gorm.DeletedAt{}
+	if err := s.encryptSystemChannelSecrets(&channel); err != nil {
+		return nil, err
+	}
+
+	channelModels := make([]model.ChannelModel, 0, len(sourceModels))
+	priceTiers := make([]model.ChannelModelPriceTier, 0)
+	for _, sourceModel := range sourceModels {
+		modelID, idErr := s.repo.NextPrefixedID("MODEL")
+		if idErr != nil {
+			return nil, idErr
+		}
+		channelModel := sourceModel
+		channelModel.ID = modelID
+		channelModel.ChannelID = channel.ID
+		channelModel.CreatedAt = time.Time{}
+		channelModel.UpdatedAt = time.Time{}
+		channelModel.DeletedAt = gorm.DeletedAt{}
+		channelModel.PriceTiers = nil
+		channelModels = append(channelModels, channelModel)
+		for _, sourceTier := range sourceModel.PriceTiers {
+			tierID, tierErr := s.repo.NextPrefixedID("PTIER")
+			if tierErr != nil {
+				return nil, tierErr
+			}
+			priceTier := sourceTier
+			priceTier.ID = tierID
+			priceTier.ChannelModelID = channelModel.ID
+			priceTier.Selector = nil
+			priceTier.CreatedAt = time.Time{}
+			priceTier.UpdatedAt = time.Time{}
+			priceTier.DeletedAt = gorm.DeletedAt{}
+			priceTiers = append(priceTiers, priceTier)
+		}
+	}
+	if err := s.repo.CreateDuplicatedSystemChannel(&channel, channelModels, priceTiers); err != nil {
+		return nil, err
+	}
+	s.invalidateRouteCatalog()
+	items, err := s.repo.ChannelModels(channel.ID, true)
+	if err != nil {
+		return nil, err
+	}
+	public := publicChannel(channel, true, items)
+	return &public, nil
+}
+
+func duplicateChannelName(name string) string {
+	const suffix = " - 副本"
+	base := []rune(strings.TrimSpace(name))
+	if len(base) == 0 {
+		base = []rune("系统渠道")
+	}
+	if len(base)+len([]rune(suffix)) > 80 {
+		base = base[:80-len([]rune(suffix))]
+	}
+	return string(base) + suffix
+}
+
 func (s *Service) UpdateSystemChannel(actor *model.User, id string, req ChannelRequest) (*PublicModelChannel, error) {
 	if err := s.RequireAdmin(actor); err != nil {
 		return nil, err
@@ -657,15 +759,23 @@ func (s *Service) LogAPICall(log model.ApiCallLog) error {
 			stdlog.Printf("provider billing request id update failed: billing_order_id=%s provider_request_id=%s error=%v", log.BillingOrderID, log.ProviderRequestID, err)
 		}
 	}
-	if log.TaskID != "" {
+	if log.TaskID != "" && (log.RequestKind == "create" || log.RequestKind == "poll" || log.RequestKind == "cancel") {
 		stage := log.RequestKind
 		var nextPollAt *time.Time
 		if stage == "create" && log.Status == model.ApiCallStatusSucceeded && log.ProviderRequestID != "" {
 			stage = "accepted"
-			next := time.Now().Add(2 * time.Second)
+			delay := 2 * time.Second
+			if log.Capability == "video" {
+				delay = defaultVideoPollInterval
+			}
+			next := time.Now().Add(delay)
 			nextPollAt = &next
 		} else if stage == "poll" {
-			next := time.Now().Add(5 * time.Second)
+			delay := 5 * time.Second
+			if log.Capability == "video" {
+				delay = defaultVideoPollInterval
+			}
+			next := time.Now().Add(delay)
 			nextPollAt = &next
 		}
 		if err := s.repo.UpdateTaskProviderState(log.TaskID, log.ProviderRequestID, stage, nextPollAt); err != nil {
@@ -697,7 +807,9 @@ func (s *Service) LogAPICall(log model.ApiCallLog) error {
 }
 
 func (s *Service) mergeVideoAPICallLog(log model.ApiCallLog) (bool, error) {
-	if log.Capability != "video" || (log.RequestKind != "poll" && log.RequestKind != "download") {
+	// Delivery is a separate outcome: a failed download must not rewrite a
+	// successful generation request as failed.
+	if log.Capability != "video" || log.RequestKind != "poll" {
 		return false, nil
 	}
 	if log.TaskID == "" && log.ProviderRequestID == "" {
@@ -783,13 +895,6 @@ func (s *Service) channelFromRequest(req ChannelRequest, channel model.ModelChan
 		return channel, err
 	}
 	channel.Name = name
-	if req.PublicAlias != nil {
-		alias := strings.TrimSpace(*req.PublicAlias)
-		if len([]rune(alias)) > 80 {
-			return channel, BadAuthRequest("前台显示别名不能超过 80 个字符")
-		}
-		channel.PublicAlias = alias
-	}
 	if req.SortOrder != nil {
 		if err := validateChannelSortOrder(*req.SortOrder); err != nil {
 			return channel, err
@@ -854,7 +959,7 @@ func publicChannel(channel model.ModelChannel, admin bool, channelModels []model
 					capabilityConfig = normalized
 				}
 			}
-			modelCosts = append(modelCosts, PublicChannelModelPrice{Model: item.ModelKey, DisplayName: item.DisplayName, Icon: item.Icon, Capability: item.Capability, Protocol: item.Protocol, BillingMode: item.BillingMode, UnitPriceMicrocredits: item.UnitPriceMicrocredits, InputTokenPriceMicrocredits: item.InputTokenPriceMicrocredits, OutputTokenPriceMicrocredits: item.OutputTokenPriceMicrocredits, CachedTokenPriceMicrocredits: item.CachedTokenPriceMicrocredits, CapabilityConfig: capabilityConfig})
+			modelCosts = append(modelCosts, PublicChannelModelPrice{Model: item.ModelKey, DisplayName: item.DisplayName, ChannelLabel: item.ChannelLabel, Tags: item.Tags, Description: item.Description, Icon: item.Icon, Capability: item.Capability, Protocol: item.Protocol, BillingMode: item.BillingMode, UnitPriceMicrocredits: item.UnitPriceMicrocredits, InputTokenPriceMicrocredits: item.InputTokenPriceMicrocredits, OutputTokenPriceMicrocredits: item.OutputTokenPriceMicrocredits, CachedTokenPriceMicrocredits: item.CachedTokenPriceMicrocredits, CapabilityConfig: capabilityConfig})
 		}
 	}
 	if len(models) == 0 {
@@ -874,17 +979,12 @@ func publicChannel(channel model.ModelChannel, admin bool, channelModels []model
 	} else if admin {
 		apiKey = channel.APIKey
 	}
-	name, alias := channel.PublicName(), ""
-	if admin {
-		name, alias = channel.Name, channel.PublicAlias
-	}
 	return PublicModelChannel{
 		ID:               channel.ID,
 		UserID:           channel.UserID,
 		Scope:            channel.Scope,
 		Enabled:          channel.Enabled,
-		Name:             name,
-		PublicAlias:      alias,
+		Name:             channel.Name,
 		SortOrder:        channel.SortOrder,
 		BaseURL:          baseURL,
 		APIKey:           apiKey,
