@@ -812,6 +812,16 @@ async function main() {
 
     if (failures > 0) {
         console.error(`\nPrevis P0 Chrome E2E FAILED (${failures} assertion(s)).`);
+        const diagnostic = results
+            .filter((result) => !result.ok)
+            .map((result) => `${result.name}${result.detail ? ` — ${result.detail}` : ""}`)
+            .join(" | ")
+            .replace(/[\r\n]+/g, " ")
+            .slice(0, 60000);
+        // GitHub Actions hides the step log from anonymous API callers. Emit the
+        // already-collected assertion details as a bounded annotation so a failed
+        // quality run remains diagnosable without weakening any assertion.
+        console.log(`::error title=Previs P0 Chrome E2E failure::${diagnostic}`);
         process.exit(1);
     }
     console.log("\nPrevis P0 Chrome E2E PASSED.");
