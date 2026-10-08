@@ -12,32 +12,23 @@ export async function checkChangedFormatting({ cwd = process.cwd(), baseSha = pr
         return result.stdout;
     };
     const head = git(["rev-parse", "--verify", `${headSha}^{commit}`]).trim();
-    const parents = git(["rev-list", "--parents", "-n", "1", head]).trim().split(" ").slice(1);
-    const explicitBase = baseSha && !/^0+$/.test(baseSha) ? git(["rev-parse", "--verify", `${baseSha}^{commit}`]).trim() : null;
-    // Keep tag checks scoped to the first parent, but omit unchanged main-side files in merge releases.
-    const base = explicitBase || parents[0] || null;
-    const mergeScopeParent = !explicitBase && baseSha && /^0+$/.test(baseSha) && parents.length > 1 ? parents[1] : null;
-    let files = (base ? git(["diff", "--relative", "--name-only", "--diff-filter=ACMR", "-z", base, head, "--", "."]) : git(["ls-tree", "-r", "--name-only", "-z", head, "--", "."]))
+    const parent = git(["rev-list", "--parents", "-n", "1", head]).trim().split(" ")[1] || null;
+    let base = parent;
+    if (baseSha && !/^0+$/.test(baseSha)) {
+        // 强制改写提交历史后，push 事件里的 before 可能已不在 checkout 中；
+        // 对合法但失效的 SHA 退回当前父提交，仍校验本次提交的完整改动。
+        if (!/^[0-9a-f]{40}$/i.test(baseSha)) throw new Error(`Invalid base SHA: ${baseSha}`);
+        const resolved = spawnSync("git", ["rev-parse", "--verify", `${baseSha}^{commit}`], { cwd, encoding: "utf8" });
+        if (resolved.status === 0) {
+            base = resolved.stdout.trim();
+        } else {
+            log(`Base SHA ${baseSha} is unavailable; checking against the head parent instead.`);
+        }
+    }
+    const files = (base ? git(["diff", "--relative", "--name-only", "--diff-filter=ACMR", "-z", base, head, "--", "."]) : git(["ls-tree", "-r", "--name-only", "-z", head, "--", "."]))
         .split("\0")
         .filter((file) => /\.(css|html|json|js|jsx|md|mdx|mjs|cjs|ts|tsx|yaml|yml)$/.test(file));
     const prefix = git(["rev-parse", "--show-prefix"]).trim();
-    if (mergeScopeParent) {
-        const treeBlobs = (tree) =>
-            new Map(
-                git(["ls-tree", "-r", "-z", tree, "--", "."])
-                    .split("\0")
-                    .filter(Boolean)
-                    .map((entry) => {
-                        const separator = entry.indexOf("\t");
-                        const [, , blob] = entry.slice(0, separator).split(" ");
-                        const path = entry.slice(separator + 1);
-                        return [path.startsWith(prefix) ? path.slice(prefix.length) : path, blob];
-                    }),
-            );
-        const mainBlobs = treeBlobs(mergeScopeParent);
-        const mergedBlobs = treeBlobs(head);
-        files = files.filter((file) => !mainBlobs.has(file) || mainBlobs.get(file) !== mergedBlobs.get(file));
-    }
     const previousFiles = new Set(base ? git(["ls-tree", "-r", "--name-only", "-z", base, "--", "."]).split("\0") : []);
     const failures = [];
     for (const file of files) {

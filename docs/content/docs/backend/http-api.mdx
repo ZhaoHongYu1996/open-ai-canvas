@@ -5,6 +5,24 @@ description: 信封、错误码与 OpenAPI
 
 # HTTP API 合同
 
+## 注册邮箱等价检查
+
+公开注册与邮箱绑定的唯一性检查将 `gmail.com` 和 `googlemail.com` 视为同一域，移除本地部分的点及 `+` 后缀。例如 `a.b+x@googlemail.com` 与 `ab@gmail.com` 不允许创建两个账号。其他域保留点和 `+`；现有域名白名单规则保持不变。
+
+邮箱原值仍按原有小写、去首尾空格规则保存。登录、密码重置、验证码收件地址保持精确邮箱匹配，避免既有重复别名账号被合并或错误授权。已存在的重复账号不迁移、不删除、不重新发放注册奖励；它们会阻止相同规范信箱的新注册。写入前在事务内重新检查，以覆盖不同实例使用不同验证码的并发注册。无数据库结构迁移；唯一性由公开注册与绑定的事务入口保证，直接 SQL 写入不属于该约束入口。
+
+## 分片上传配额
+
+`POST /resources/uploads` 在接收分片前预留整个文件的日额度和账号容量。文件大小必须严格小于 `resourceUploadMB`；同一账号最多 32 个未到期会话，跨后端实例共同计数。未满足配额的请求不会创建分片目录。分片和完成请求按会话串行执行；会话过期或已完成返回 404，重新创建会话后可整传重试。
+
+完成上传时以数据库事务提交容量并消费预留，使用既有资源幂等标识。失败释放预留；跨 UTC 日期完成需要通过当天日额度检查。请求与响应字段不变。
+
+## AutoDL 视频画面规格配置
+
+渠道模型的 `capabilityConfig.video.resolutions` 与 `defaultResolution` 直接表示所选完整分辨率与默认值，始终生效；不再使用或返回 `customSizeEnabled`、`customScreenSpec`。AutoDL v2.3.0 未声明独立比例参数，因此 `ratios` 为空、`defaultRatio` 为空字符串，横竖与方形由完整分辨率标签表达。
+
+服务端返回 `fixedScreenSpec` 供前端展示插件预设；写入时重新读取官方插件的当前工作流规格，不信任客户端传入的固定值。所选列表必须非空且属于插件预设，默认值必须属于所选列表；大小写归一化为插件原始标签。任务创建在价格选择前清空无效的 `size`、归一化 `vquality`；自动选择使用配置的默认值，不支持的显式选择被拒绝。价格档可保留全部插件预设，但任务和模型目录只采用所选列表。数据库继续使用现有能力 JSON 字段，无新增表或迁移。
+
 路径前缀是 `/api`。前后端一起发布，不按 `/api/v1`、`/api/v2` 做路径版本。不兼容变更随版本一起改接口和调用方。
 
 机器可读规范：运行中的 `GET /api/openapi.yaml`，源文件 `backend/internal/handler/openapi.yaml`。前端 TypeScript 仍走 `web/src/services/api` 的 `http`，不从 OpenAPI 生成客户端。
@@ -15,12 +33,17 @@ description: 信封、错误码与 OpenAPI
 
 ## 资源访问与 OSS/CDN 分发
 
+普通上传、分片合并及 URL 导入按内容签名识别 MIME，不以客户端声明或文件扩展名决定媒体类型；无法识别的内容仍可作为附件上传。上传标识对应的 ready/failed 重试均先读取内容，并核对检测后的 MIME、资源类型与大小；不一致返回 409，不覆盖原对象。这是内容判型与元数据一致性校验，不是完整格式解码或内容摘要去重。
+
+非媒体文件（包括可执行脚本的 SVG）通过平台本地读取或代理交付，强制 `Content-Disposition: attachment` 与 `Content-Security-Policy: sandbox; default-src 'none'`，不向浏览器或访问描述返回其 OSS/CDN 直链。普通图片、音频及视频保持原有媒体分发规则。历史资源不在本次变更中批量重新判型。
+
 资源展示、播放、下载、复制地址和模型输入统一消费资源访问合同，不在客户端通过 `direct=1`、`proxy=1` 或存储厂商规则选择出口。
 
-- `POST /api/resources/access` 要求登录，请求体为 1–100 项 `{ resourceId, purpose?, variant? }`。`purpose` 支持 `display`、`copy`、`download`、`browser-process`、`provider-input`；`variant` 支持 `original`、`playback`。每项独立返回 `access` 或结构化 `error`。
-- `access.delivery` 为 `cdn`、`origin`、`platform-local` 或 `platform-proxy`。配置了可用 CDN 时返回 CDN 地址；OSS 源站签名是源站直连，不等于 CDN。`requireCDN` 开启且 CDN 鉴权不完整时失败，不静默回源。浏览器的展示、复制、下载和本地处理不允许使用 `platform-proxy`，云资源正文始终由 OSS/CDN 直接发送给浏览器；`allowPrivateProxy` 只允许服务端在 `provider-input` 场景向第三方模型提交参考素材时读取私有源站。
-- `expiresAt` / `refreshAt` 只描述当前授权有效期。`provider-input` 默认 4 小时，其余签名访问默认 5 分钟；公开 CDN 可没有 `expiresAt`。签名地址不写入画布或服务端持久化内容。
-- `GET /api/resources/:id/file` 仍是稳定平台入口，负责本地/平台代理字节流，云资源只返回 307 到 CDN 或对象存储；`?access=1` 只返回访问描述，不打开正文。`Range` 只影响字节流路径。
+- `POST /api/resources/access` 要求登录，请求体为 1–100 项 `{ resourceId, purpose?, variant? }`。`purpose` 支持 `display`、`copy`、`download`、`browser-process`、`provider-input`；`variant` 支持 `original`、`playback`、`thumbnail`（缩略图未生成前回落原件，`fallbackReason` 为 `thumbnail_not_ready`）。每项独立返回 `access` 或结构化 `error`。
+- `access.delivery` 为 `cdn`、`origin`、`platform-local` 或 `platform-proxy`。媒体配置了可用 CDN 时返回 CDN 地址；OSS 源站签名是源站直连，不等于 CDN。媒体的 `requireCDN` 开启且 CDN 鉴权不完整时失败，不静默回源。浏览器媒体的展示、复制、下载和本地处理不使用 `platform-proxy`，正文由 OSS/CDN 直接发送；`allowPrivateProxy` 允许服务端在 `provider-input` 场景读取私有媒体源站。非媒体附件始终通过平台控制响应头，不受上述媒体直连规则影响。
+- `expiresAt` / `refreshAt` 只描述当前授权有效期。有效期来自后台「资源与请求策略」（`provider-input` 与其余签名访问分别配置，默认均为 4 小时）；公开 CDN 可没有 `expiresAt`。签名地址不写入画布或服务端持久化内容。
+- `display`、`copy`、`browser-process` 的源站签名把签名起始时间对齐到有效期 1/4 的时间窗（按 Unix 纪元对齐），过期时间为窗口起点加有效期：同一窗口内重复签发得到逐字节相同的 URL，刷新画布或多实例签发都能命中浏览器 HTTP 缓存；签名同时携带 `response-cache-control=private, max-age=<有效期>, immutable`，由对象存储回写缓存头。`download` 与 `provider-input` 仍按当前时间签发，不带缓存覆盖。
+- `GET /api/resources/:id/file` 仍是稳定平台入口，负责本地/平台代理字节流，可直连的云媒体返回 307 到 CDN 或对象存储，非媒体附件走平台流；`?access=1` 只返回访问描述，不打开正文。`Range` 只影响字节流路径。
 - 公共资源、画布分享、外观、公告、管理员资源和日志媒体复用同一个 HTTP 执行器。公共签名链接受自身到期时间和变体绑定限制，但已签发的外部 URL 不承诺立即撤销。
 
 当前自动签名能力：公开 CDN、七牛私有下载签名和对象存储源站签名。阿里云/腾讯云私有 CDN 签名尚未自动支持，不能仅填写 CDN 域名就宣称已命中 CDN。真实 CORS、Range、CDN 命中率及账单收益必须在实际云环境通过浏览器网络记录和服务端流量观测验收。
@@ -67,19 +90,28 @@ CANVAS_BACKEND_DATA_DIR=/明确的数据目录 ./migrate-schema repair-canvas-re
 - 物理空间由后台删除队列异步释放，失败保留任务重试；接口成功不代表对象存储已经清理完成。未选中素材使用的资源，以及其他 Resource 行（包括其他用户）复用的物理对象继续保留。
 - 旧画布 / 任务 / 历史快照记录本身保留，但被删媒体链接将失效。此操作不可恢复；没有数据库结构迁移。
 
+## 密码登录限流
+
+`POST /auth/login` 保留 IP 总请求限制与十分钟账号请求限制。同一 IP 下，用户名和邮箱解析为同一用户时共享账号计数；不存在的账号仍按去除首尾空白、转小写后的输入计次。错误密码与不存在的账号使用相同的 401 响应，达到限额后均返回 429，不返回限流键或用户身份。计数仍涵盖所有登录请求，成功不清零。
+
 ## 注册服务协议
 
-`POST /auth/register` 的 JSON 请求必须携带布尔值 `acceptedTerms: true`，首次创建管理员也适用。缺省、`false` 或 `null` 均按未同意处理，在创建用户、消费验证码和创建会话前返回 HTTP 400，提示“请先同意影策服务协议”。原有注册开放、邮箱白名单、验证码与限流校验继续生效。
+`POST /auth/register` 的 JSON 请求必须携带布尔值 `acceptedTerms: true`，首次创建管理员也适用。缺省、`false` 或 `null` 均按未同意处理，在创建用户、消费验证码和创建会话前返回 HTTP 400，提示“请先同意<协议名称>”。原有注册开放、邮箱白名单、验证码与限流校验继续生效。
 
 `GET /auth/linuxdo/start` 可携带 `acceptedTerms=true`，只有该精确值表示同意。服务端将标志写入一次性的 OAuth state；回调仅在新建 Linux.do 用户时要求该 state 已同意，不从回调参数重新取值。已有 Linux.do 用户可从登录页继续登录，无需传此参数；同意协议不绕过注册关闭策略。
 
-注册页的协议名称为《影策服务协议》。正文暂留空，由维护者在 `web/src/pages/auth/register.tsx` 的 `SERVICE_AGREEMENT` 中手动填写正式条款并审核后再发布；占位提示不是正式协议。当前只校验本次注册的同意标志，不保存长期协议版本或签署凭证。前后端需一起更新，旧客户端缺少同意标志时无法注册。
+协议名称与正文由管理员在 `PATCH /admin/settings/registration` 配置，公开读取面是 `GET /auth/settings` 的 `agreementTitle`、`agreementContent`。`agreementTitle` 未配置时按当前外观品牌名生成“<品牌名>服务协议”，因此外观改名后注册页文案同步；接口返回的标题不含书名号，由注册页补《》。`agreementContent` 支持多段文本，按空行分段渲染，留空时注册页提示“服务协议内容待补充”。
 
+读取注册配置失败（如 JSON 损坏）时，`RegistrationAgreement` 返回空标题而不是品牌名兜底标题，注册页据此隐藏协议入口并提示可重新读取，避免展示后台并不存在的协议名称；此时错误提示统一回落为“请先同意服务协议”。
+
+`PATCH /admin/settings/registration` 的两个协议字段为可选指针语义：不提交表示保留已保存内容，提交空串表示明确清空。注册开关与协议正文可以分开保存，单独切换 `enabled` 不会覆盖协议。当前只校验本次注册的同意标志，不保存长期协议版本或签署凭证。前后端需一起更新，旧客户端缺少同意标志时无法注册。
 ## 站点皮肤主按钮
 
-### 画布配置与 Live2D（外观合同版本 9）
+### 画布配置、更新公告与 Live2D（外观合同版本 10）
 
-`GET /public/appearance` 和管理员 `GET /admin/settings/appearance` 返回 `canvas`；管理员通过 `PATCH /admin/settings/appearance` 随外观配置统一保存。字段为 `agentName`（1–24 字）、`launcherLabel`（0–24 字）、`panelTitle`（1–40 字）、`welcomeTitle`（1–100 字）、`welcomeDescription`（0–200 字）、`inputPlaceholder`（1–160 字）、`avatarType`（`orb|live2d`）、`avatarHeight`（120–360 整数）、`live2dResourceId`、`live2dEntry`。入口由服务端核验覆盖；Live2D 无有效资源时拒绝启用。配置不修改 Agent 系统提示词。
+外观设置新增 `updates: { enabled, currentVersion, releases }`，由管理员通过 `PATCH /admin/settings/appearance` 保存；关闭开关保留草稿，但 `GET /public/appearance` 返回关闭状态与空公告列表，前端恢复内置更新日志。开启时公开版本与内容块，当前版本须对应公告版本。媒体上传、管理员预览、公开引用读取及限制详见 [自定义更新公告](/docs/backend/update-announcements)。JSON 请求上限为 512KB；无数据表迁移。
+
+`GET /public/appearance` 和管理员 `GET /admin/settings/appearance` 返回 `canvas`；管理员通过 `PATCH /admin/settings/appearance` 随外观配置统一保存。字段为 `agentName`（1–24 字）、`launcherLabel`（0–24 字）、`panelTitle`（1–40 字）、`welcomeTitle`（1–100 字）、`welcomeDescription`（0–200 字）、`inputPlaceholder`（1–160 字）、`avatarType`（`orb|live2d`）、`avatarHeight`（120–360 整数）、`live2dResourceId`、`live2dEntry`。入口由服务端核验覆盖；Live2D 无有效资源时拒绝启用。名称以数据形式投影到每轮 Agent 执行上下文，不提供自由系统提示词配置，也不改变工具权限。
 
 - `POST /admin/settings/appearance/live2d`：管理员 multipart `file` 上传，受上传频率和配额限制。成功信封的 `data.model` 为 `{ resourceId, entry }`，上传不会发布。ZIP 限 128 MiB、256 条目、解压合计 384 MiB、单文件 128 MiB；只接收 model3/MOC3/PNG/JSON，拒绝路径穿越、脚本和外部资源。
 - `GET /admin/settings/appearance/live2d/:id/*file`：管理员预览，校验资源归属；其他管理员仅能查看当前外观已引用模型。
@@ -99,19 +131,15 @@ CANVAS_BACKEND_DATA_DIR=/明确的数据目录 ./migrate-schema repair-canvas-re
 
 ```json
 {
-  "models": [
-    {
-      "modelId": "MODEL001",
-      "priceVersion": 4,
-      "priceTiers": [
-        {
-          "id": "TIER001",
-          "priceVersion": 8,
-          "prices": { "unitPriceMicrocredits": 1370000 }
-        }
-      ]
-    }
-  ]
+  "models": [{
+    "modelId": "MODEL001",
+    "priceVersion": 4,
+    "priceTiers": [{
+      "id": "TIER001",
+      "priceVersion": 8,
+      "prices": { "unitPriceMicrocredits": 1370000 }
+    }]
+  }]
 }
 ```
 
@@ -137,10 +165,10 @@ CANVAS_BACKEND_DATA_DIR=/明确的数据目录 ./migrate-schema repair-canvas-re
 
 以下接口需要登录 Cookie，返回 `data.quote`，仅校验和报价，不创建任务、账单或冻结余额，不调用供应商生成接口。
 
-| 接口                        | 请求                                                                                                  |
-| --------------------------- | ----------------------------------------------------------------------------------------------------- |
+| 接口 | 请求 |
+| --- | --- |
 | `POST /model-catalog/quote` | `{ channelId, modelKey, intent }`，仅允许启用的系统渠道与可用模型，复用任务准入、默认参数和价格档选择 |
-| `POST /models/:id/quote`    | 直接提交 `intent`，按前台逻辑模型当前可用线路和价格策略报价                                           |
+| `POST /models/:id/quote` | 直接提交 `intent`，按前台逻辑模型当前可用线路和价格策略报价 |
 
 `intent` 包含 `capability`（`text/image/video/audio`）、`operation`、`inputs`（素材类型到数量的映射）和 `options`（请求规格）。素材数量必须为 0–128 的整数，再按模型能力限制校验。视频规格包括 `vquality`、`size`、`videoSeconds`、布尔值 `videoGenerateAudio`，显式 `false` 必须保留。
 
@@ -166,16 +194,18 @@ Token 报价的 `estimated` 为 `true`，`quantity` 是预留 Token 数。参考
 
 画布内容使用数据库递增的 `revision` 做乐观并发校验；`updatedAt` 仅用于展示，不作为版本依据。新建 `PUT /canvas-projects/:id` 的 `project.revision` 为 0，已有画布必须带上读取到的版本。数据库在同一次条件更新中匹配 ID、用户与版本，成功后返回 `data.project` 摘要及递增后的版本；缺失版本返回 428，陈旧版本返回 409，非法版本返回 400。客户端不能获取新版号后直接重发旧内容。
 
-| 接口                                                    | 行为                                                                           |
-| ------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| `GET /canvas-projects/:id`                              | 返回当前内容及权威版本号                                                       |
-| `GET /canvas-projects/:id/history`                      | 返回 `snapshots` 摘要与 `currentRevision`，不批量读取历史正文                  |
-| `GET /canvas-projects/:id/history/:snapshotId`          | 按需返回 `snapshot` 摘要和 `project` 历史正文                                  |
+| 接口 | 行为 |
+| --- | --- |
+| `GET /canvas-projects/:id` | 返回当前内容及权威版本号；响应包含基于数据库 `revision` 的弱 `ETag` 和 `Cache-Control: private, no-cache`。请求可用 `If-None-Match` 做条件读取，版本未变化时返回无正文的 `304`。 |
+| `GET /canvas-projects/:id/history` | 返回 `snapshots` 摘要与 `currentRevision`，不批量读取历史正文 |
+| `GET /canvas-projects/:id/history/:snapshotId` | 按需返回 `snapshot` 摘要和 `project` 历史正文 |
 | `POST /canvas-projects/:id/history/:snapshotId/restore` | 请求 `{ revision }` 为当前画布版本，成功返回新版本摘要；恢复前强制备份当前内容 |
 
 历史接口先验证画布归属；无权访问、已删除画布或不存在的快照返回 404。恢复沿用画布写入限流和素材校验，在同一事务完成版本校验、备份、内容写入及历史资源保护。恢复保留当前画布 ID 和项目归属，生成新版本，不倒退版本号。升级前的内容无法补建历史。
 
 平移和缩放只持久化浏览器视口，内容 PUT 忽略客户端 `viewport` 和 `remoteContentHash`。前端遇到 409/428 会保留账号隔离的本地草稿、暂停该画布自动提交，并提供加载最新版和下载草稿入口；载入最新版前草稿写入失败时停止替换。其他画布仍可保存。
+
+单画布读取会先查询归属用户的版本元数据，再判断 `If-None-Match`；命中时不会读取大型画布正文。未命中时返回完整项目 JSON。正文达到 1 KiB 且客户端声明接受 gzip 时响应使用 gzip 压缩，并带 `Vary: Accept-Encoding`；因此客户端应以 HTTP 状态码区分 `200` 正文和 `304` 未变化，不要把 `304` 当作业务错误。
 
 云端 Agent 与创作任务的写入共用版本和历史事务；Agent `canvasPatch` 携带 `baseRevision`、`revision`，客户端只接受连续增量，跳过重复事件，缺口或同字段冲突时保留草稿并重新核对。删除、重排或顶层内容变化无法由增量完整表示时，事件携带 `requiresRefresh: true` 且不附 `canvasPatch`，客户端完整核对后才推进基线；撤销事件同样触发核对。保存日志仅记录请求/链路 ID、画布/用户 ID、版本、节点数量变化及 HTTP 状态，不记录正文、提示词或媒体 URL。
 
@@ -201,7 +231,7 @@ Token 报价的 `estimated` 为 `true`，`quantity` 是预留 Token 数。参考
 - 创建和追加消息可选择 `reasoningMode`，默认 `off`；`auto`/`deep` 为服务端行为策略与模型推理配置的选择，不等于允许暴露内部思维链。供应商能力由后端校验；声明式 Agent 渠道不支持时明确报错。推理可能增加耗时和费用。
 - Cloud Agent 与首页创造的规划请求使用自动工具选择。OpenAI Chat Completion 兼容协议会把显式 `auto` 归一化为省略 `tool_choice`，沿用协议默认的自动选择语义；显式开启思考模式时还会在首个上游请求前移除 `required` 或指定函数对象。非思考模式仍保留艺术点评、提示词优化等结构化任务的强制函数选择。若上游隐式开启思考而本地未声明，仍按 `required` → `auto` → 省略字段做兼容重试。
 - `GET /agent/profile?scope=user|project|canvas&projectId=...&canvasId=...` 按作用域读取生效的用户 → 项目 → 画布偏好；`PATCH /agent/profile` 用 `{ scope, projectId?, canvasId?, content, revision }` 更新单层（首次 revision 为 0，冲突返回 409）。读取返回各层独立数字 revision，以及合并文档的 `revision`/`hash`；新轮次携带合并 `profileRevision`，发生变化拒绝创建，已运行轮次仍用提交时固定的快照。system prompt 只包含层级、revision、hash 和长度清单，正文保存在运行快照中；本轮快照有层时才提供 `agent_profile_read`，只读清单中存在的层。没有偏好层时工具清单不含该工具。偏好仅是非授权数据，不能扩展工具、节点或预算，不能绕过审批；最多 12000 字符/层。
-- 系统行为策略与媒体默认策略是版本化、编译进后端发布物的资源，修改它们仍需发布后端，不是后台热更新；工具、校验、扣费和审批在代码侧强制执行。画布节点能力由服务端 registry 定义，工具 schema、创建、连线与画布摘要读取共同消费；新生成模式还必须接入媒体任务适配器，不能仅凭 md 或注册节点启用收费操作。
+- 系统行为策略与媒体默认策略是版本化、编译进后端发布物的资源，修改它们仍需发布后端，不是后台热更新；工具、校验、扣费和审批在代码侧强制执行。系统行为策略当前版本为 10：`canvasSummary` 被定义为节点目录，模型不得把它当成完整画布。画布节点能力由服务端 registry 定义，工具 schema、创建、连线与画布目录读取共同消费；新生成模式还必须接入媒体任务适配器，不能仅凭 md 或注册节点启用收费操作。
 - 已安装且属于当前用户的技能在创建时只保存版本、哈希和文本文件路径，不预存全部正文，也不按所有选中技能正文合计 128KB 拒绝创建。`skill_read_file` 按需读取 `SKILL.md` 或必要引用，支持字符偏移 `offset`（默认 0），每页最多 12000 字符，返回 `hasMore` / `nextOffset`。读取时重新验证用户权限、启用状态和版本；技能更新后拒绝混读，需新开一轮。技能是不可信数据，不能创造工具、改变权限或覆盖系统规则。
 - Agent 按实际文本模型的 `contextWindowTokens` 与 `maxOutputTokens` 计算输入预算，并在达到该模型预算的压缩阈值时移除较早工具结果中可重新读取的正文，保留工具调用/结果配对、用户原始要求、生成回执及最近完整工具轮次，并允许重新读取。此机制是确定性正文卸载，不是 LLM 语义摘要；运行 checkpoint 的持久化上限与模型上下文窗口独立。技能读取事件只保存回执，不复制正文，正文页只进入模型对话。
 - 达到同一条压缩线时整轮不再直接判死：Agent 先暂停步进循环，用一次独立模型调用（任务操作名 `cloud_agent_context_compaction`，按单步墙钟计时但不占本轮的模型调用步数）把历史压成结构化检查点，再以 `Resume` 用压缩后的上下文继续本轮；同一轮最多压缩 4 次，压完仍超过输入预算才回到原有的预算失败路径。检查点是固定字段的 JSON（`version` 为 1，字段为 `historySummary`、`scriptDesign`、`operationHistory`、`pendingTasks`、`currentWork`、`nextStep`、`decisions`、`constraints`、`userPreferences`、`compactedTurnCount`），未知字段一律拒绝，超过 64KiB 判为不合格。压缩后的上下文是「检查点帧 + 确认回执 + 最近 2 对完整对话」：不以 tool 回执或带工具调用的 assistant 开头，检查点帧不计为用户轮次，续轮交接不会再重复追加本轮的用户要求与回复。渠道没有配置模型上下文窗口时，判据退回既有的跨轮历史闸门（`cloudAgentHistoryKeepRounds` 轮与 `cloudAgentHistoryMaxBytes` 字节）。
@@ -230,7 +260,7 @@ Token 报价的 `estimated` 为 `true`，`quantity` 是预留 Token 数。参考
 - `generate_media` / `image_layer_split` 必须将 `model_list.selection` 展开到顶层参数：提供非空 `logicalModelId`，或完整的非空 `channelId` + `channelModelKey`，不得混用；未使用的字段可省略或传空字符串，不能传 `null` 或仅含空白的字符串。后端在读取画布、创建草稿、审批与计费前校验选择结构；返回 `reason: invalid_tool_arguments`、`field`、`issue` 和本轮工具 `parameters`，区分 `required`、`mutually_exclusive`、`type_mismatch`、`invalid_value`。合法结构不代表模型可用，仍须通过目录、能力、权限和价格校验；不猜测模型、不补全选择、不切换渠道，也不吞掉未知字段。
 - `canvas_apply_ops` 创建节点、编辑提示词或连线不会提交生成任务，也不会改变已提交任务的输入；收费生成独立使用 `generate_media`。操作参数错误按数组项返回 `field`（例如 `ops[0].snapshotHash`）和 `issue`（例如 `unexpected_field`、`type_mismatch`、`required`），并附本轮工具 schema；不把未知字段误报成缺少其他必填字段，不回显任意参数键和值。
 - `read_only` 只允许读取；`request_approval` 对写画布和媒体生成暂停为 `waiting_approval`；`auto` 可在预算内执行已授权画布操作，但图片 / 视频生成始终独立审批，不能绕过。`maxGenerationTasks` / `maxVideoSeconds` 为非负整数，0 表示该项不设业务上限，正数按本轮累计执行；不再固定 8 次模型调用、8 个生成任务或 120 秒视频。积分上限仍必填且大于 0，实际报价在任务创建与预留积分前校验，时长必须符合所选模型的实际能力。失败事件保留具体错误和已有任务的 `taskId`、`nodeId`、`status`；媒体结果的 `phase` 区分 `admission` 与 `completion`，`taskSubmitted` 表达是否已提交。已提交的收费生成失败作为工具错误交回模型，整轮保持可继续，不得自动重试收费生成；只有生成结果无法回写画布时才把整轮标为 `failed`。模型应报告错误，不能自行删减提示词。
-- 必须有当前用户已保存的画布。首轮摘要最多取前 80 个节点，并按约 60KB 预算截断；装不下的节点记入 `omittedNodes`，不因摘要过大整轮拒绝。`canvas_get_state` 可按 `offset` 每页读取 40 个节点、资产可引用状态及相关连线，按 `nodeIds` 精读最多 8 个节点（正文每字段最多 16000 字符），通过 `hasMore` / `nextOffset` 和字段 `Truncated` 判断是否完整。分镜表包含镜头、角色节点与资产绑定；摘要每页最多 20 行，精读每次 1 行，可用 `storyboardOffset` 翻页；单行叙事文本累计最多 24000 字符，角色 / 绑定各最多 16 项。上下文不含媒体 URL、任意元数据或未同步修改；节点名称不等于图像视觉识别。普通任务重试接口不能重试 Agent 任务。
+- 必须有当前用户已保存的画布。系统提示里的 `canvasSummary` 是节点目录，不是整张画布的 JSON：每条只含 `id`、`type`、截断后的 `title`，以及不支持操作的类型标记；最多列入 120 个节点，并按约 24KB 兜底截断，装不下的节点记入 `omittedNodes` 与 `totalNodes`。正文、提示词、媒体和结构化表不进目录，由 `canvas_get_state` 按 `offset` 每页读取 40 个节点、资产可引用状态及相关连线，按 `nodeIds` 精读最多 8 个节点（正文每字段最多 16000 字符），通过 `hasMore` / `nextOffset` 和字段 `Truncated` 判断是否完整。工具结果留在当轮消息里，历史压缩会卸掉可重读正文，不会在后续每一步把整页结果再打包一次。分镜表包含镜头、角色节点与资产绑定；摘要每页最多 20 行，精读每次 1 行，可用 `storyboardOffset` 翻页；单行叙事文本累计最多 24000 字符，角色 / 绑定各最多 16 项。上下文不含媒体 URL、任意元数据或未同步修改；节点名称不等于图像视觉识别。普通任务重试接口不能重试 Agent 任务。
 - `canvas_get_state` 首次调用传 `{}`，仅接受可选的 `offset`、`storyboardOffset`（非负整数）和 `nodeIds`（最多 8 个字符串组成的数组）；当前画布由运行绑定，不接受 `canvasId`、`limit` 或 `page`。读取工具分别反馈非对象 / 多对象、JSON 格式错误、未知字段和字段类型错误。可纠正的工具参数失败在 `tool_failed.result` 及模型工具结果中返回 `reason: invalid_tool_arguments`、本轮已声明的 `parameters` 和 `guidance`；画布读取额外给出 `exampleArguments: {}`。失败调用仍如实记录，由模型修正参数后继续，不静默丢弃字段或自动重放写操作；资源归属、审批、快照和收费校验仍按原规则执行。
 - `GET /agent/runs/:id` 返回运行信息；`POST /agent/runs/:id/cancel` 取消当前运行及活动子任务；`POST /agent/runs/:id/approvals/:approvalId/decision` 接受 `{"decision":"approve"|"reject","reason":"..."}`，审批决定幂等且服务端校验归属。
 - `GET /agent/skills/usage` 需要登录，只聚合当前用户最近最多 200 次 Agent 运行的日志；返回技能启用次数、检索命中、成功/失败读取、总纲/卡片读取和最多 5 条最常读卡片路径，不返回技能正文。损坏的日志会返回错误而非静默给出不完整统计。
@@ -271,11 +301,11 @@ Skills 的 `tool_completed` / `tool_failed` 事件附带 `skillId`、`skillName`
 
 三个只读导出接口均在 service 校验管理员权限，返回 `text/csv; charset=utf-8` 附件，设置 `Cache-Control: no-store`。导出复用列表筛选条件，不受 `page`、`pageSize` 影响：
 
-| 接口                                                           | 参数与内容                                                                                                      |
-| -------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| `GET /api/admin/payments/orders/export.csv`                    | 与订单列表相同的筛选；完整订单号、渠道交易号、用户身份、商品、渠道、金额、币种、积分、订单/渠道状态及各阶段时间 |
-| `GET /api/admin/payments/reconciliations/export.csv`           | 与对账列表相同的筛选；每日执行状态、总笔数、一致/补发/异常笔数、失败原因、发起人 ID 或系统、开始/完成时间       |
-| `GET /api/admin/payments/reconciliations/:id/items/export.csv` | `result`；单次对账的完整交易明细及对账开始/完成时间，便于区分同日重跑结果                                       |
+| 接口 | 参数与内容 |
+| --- | --- |
+| `GET /api/admin/payments/orders/export.csv` | 与订单列表相同的筛选；完整订单号、渠道交易号、用户身份、商品、渠道、金额、币种、积分、订单/渠道状态及各阶段时间 |
+| `GET /api/admin/payments/reconciliations/export.csv` | 与对账列表相同的筛选；每日执行状态、总笔数、一致/补发/异常笔数、失败原因、发起人 ID 或系统、开始/完成时间 |
+| `GET /api/admin/payments/reconciliations/:id/items/export.csv` | `result`；单次对账的完整交易明细及对账开始/完成时间，便于区分同日重跑结果 |
 
 最多导出 10000 行数据（不含表头）；超限返回 400 业务错误，提示缩小筛选范围，不截断文件。无匹配数据时接口返回仅含表头的 CSV；前端无数据时禁用导出。导出不查单、不重跑对账、不补发积分。
 
@@ -310,12 +340,7 @@ CSV 使用中文表头、UTF-8 BOM、CRLF；金额按整数分精确转换为两
 失败：HTTP status 与 `code` 都不是成功；`reason` 是稳定机器可读原因。
 
 ```json
-{
-  "code": 40301,
-  "data": null,
-  "msg": "账号素材数量已达到 100 个上限",
-  "reason": "quota_exceeded"
-}
+{ "code": 40301, "data": null, "msg": "账号素材数量已达到 100 个上限", "reason": "quota_exceeded" }
 ```
 
 `code === 0` 才是业务成功。HTTP 200 但 `code !== 0` 必须当失败。前端判断类型用 `ApiError.reason` / `ApiError.code`，不要解析 `msg`。
@@ -324,37 +349,59 @@ CSV 使用中文表头、UTF-8 BOM、CRLF；金额按整数分精确转换为两
 
 `code` 默认等于 HTTP 状态。需要区分同一状态的不同原因时，使用 `status * 100 + n`。没有单独的 1001/2001 号段，以免和 HTTP 状态、现有 42901 以及重试判断打架。
 
-| code  | HTTP | reason             | 含义                         |
-| ----- | ---- | ------------------ | ---------------------------- |
-| 0     | 200  | —                  | 成功                         |
-| 400   | 400  | `invalid_argument` | 请求不合法                   |
-| 401   | 401  | `unauthorized`     | 未登录                       |
-| 403   | 403  | `forbidden`        | 无权限                       |
-| 404   | 404  | `not_found`        | 资源不存在                   |
-| 409   | 409  | `conflict`         | 冲突                         |
-| 429   | 429  | `rate_limited`     | 限流（未细分）               |
-| 500   | 500  | `internal`         | 内部错误                     |
-| 502   | 502  | `bad_gateway`      | 上游失败                     |
-| 503   | 503  | `unavailable`      | 暂时不可用                   |
-| 504   | 504  | `timeout`          | 超时                         |
-| 40301 | 403  | `quota_exceeded`   | 账号配额用尽（不自动重试）   |
-| 40901 | 409  | `conflict`         | 幂等冲突                     |
-| 42901 | 429  | `rate_limited`     | 请求限流（可带 Retry-After） |
+| code | HTTP | reason | 含义 |
+| --- | --- | --- | --- |
+| 0 | 200 | — | 成功 |
+| 400 | 400 | `invalid_argument` | 请求不合法 |
+| 401 | 401 | `unauthorized` | 未登录 |
+| 403 | 403 | `forbidden` | 无权限 |
+| 404 | 404 | `not_found` | 资源不存在 |
+| 409 | 409 | `conflict` | 冲突 |
+| 409 | 409 | `project_name_conflict` | `POST /projects` 同一用户下已有同名项目；客户端可有限更换名称重试 |
+| 429 | 429 | `rate_limited` | 限流（未细分） |
+| 500 | 500 | `internal` | 内部错误 |
+| 502 | 502 | `bad_gateway` | 上游失败 |
+| 503 | 503 | `unavailable` | 暂时不可用 |
+| 504 | 504 | `timeout` | 超时 |
+| 40301 | 403 | `quota_exceeded` | 账号配额用尽（不自动重试） |
+| 40901 | 409 | `conflict` | 幂等冲突 |
+| 42901 | 429 | `rate_limited` | 请求限流（可带 Retry-After） |
 
 模型错误把已有字符串码放进 `reason`（如 `model_capability_not_supported`），`code` 仍为 400。
 
-常量：后端 `service/error_codes.go`，前端 `web/src/services/api/error-codes.ts`。
+常量：后端标准原因定义在 `backend/internal/kernel/error_codes.go`，由 `app` 和 `service` 兼容导出；前端业务模块按 `ApiError.reason` 分支。
+
+## 技能库分类 API
+
+以下接口需要登录。技能库分类与技能广场共享分类分离：`skills.tag` 仍表示共享市场分类；用户技能库分类记录在用户自己的技能状态中，只影响该用户技能库和画布 Agent。
+
+| 方法 | 路径 | 行为 |
+| --- | --- | --- |
+| GET | `/api/skills/library-categories?scope=mine\|created` | 返回当前用户可见的个人分类和平台分类，以及所选视图下每类数量、全部技能数和未分类数量。`mine` 包含自己创建及已加入的公开技能；`created` 只统计自己创建的技能。 |
+| POST | `/api/skills/library-categories` | 请求 `{ "name": "分镜", "scope": "personal" }`。`scope` 可省略并默认为 `personal`；管理员可指定 `platform`，该分类对所有用户可见、可分配和筛选。同一用户可见范围内分类名唯一。 |
+| DELETE | `/api/skills/library-categories/:id` | 删除个人分类（仅分类所有者）或平台分类（仅管理员），只解除该分类与技能的关联，不删除技能。 |
+| PATCH | `/api/skills/:id/library-category` | 请求 `{ "categoryId": "分类 ID" }` 设置分类；空字符串清除分类。仅允许对自己创建或已加入的技能操作，并且只能使用当前用户的个人分类或平台分类。 |
+
+`GET /api/skills` 可带 `libraryCategoryId` 或 `libraryUncategorized=true`，仅用于 `scope=mine` / `scope=created`，且两者不能同时使用。它们可与共享分类筛选 `tag` 同时提供，结果需同时满足两个筛选条件。分类列表的数量不受搜索词影响，表示对应技能库范围内的完整数量。
+
+技能列表响应中的 `categories` 是技能广场共享分类，包含 `value`、`label` 和 `count`；`count` 统计已启用且公开的技能，不受当前搜索词、分页和视图筛选影响。它与技能库个人/平台分类是两套独立分类。
 
 ## 画布工具 API
 
 以下接口均要求登录，使用标准业务信封：
 
-| 方法          | 路径                      | 行为                                                                                                                                                                                                            |
-| ------------- | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| GET           | `/api/tools`              | 分页列表；`scope=public/favorites/custom`，默认 public；可按 `type=style/motion/nine_grid/effect`、tag、search 筛选。page 从 1 开始，pageSize 默认 20、最大 80；返回 tools、totalCount、page、pageSize、hasMore |
-| GET           | `/api/tools/:id`          | 可见且启用的工具详情，包含 prompt 和 extraInfo；列表不含这两个大字段                                                                                                                                            |
-| POST          | `/api/tools`              | 新建自己的工具；type、label、prompt 必填，visibility 默认 private；预览仅支持本人已上传完成的资源，公开工具暂不接受私人预览                                                                                     |
-| POST / DELETE | `/api/tools/:id/favorite` | 幂等收藏 / 取消收藏，仅允许操作可见且启用工具                                                                                                                                                                   |
-| DELETE        | `/api/tools/:id`          | 仅删除自己的用户工具，不能删除内置或他人工具                                                                                                                                                                    |
+| 方法 | 路径 | 行为 |
+| --- | --- | --- |
+| GET | `/api/tools` | 分页列表；`scope=public/favorites/custom`，默认 public；可按 `type=style/motion/nine_grid/effect`、tag、search 筛选。page 从 1 开始，pageSize 默认 20、最大 80；返回 tools、totalCount、page、pageSize、hasMore |
+| GET | `/api/tools/:id` | 可见且启用的工具详情，包含 prompt 和 extraInfo；列表不含这两个大字段 |
+| POST | `/api/tools` | 新建自己的工具；type、label、prompt 必填，visibility 默认 private；预览仅支持本人已上传完成的资源，公开工具暂不接受私人预览 |
+| POST / DELETE | `/api/tools/:id/favorite` | 幂等收藏 / 取消收藏，仅允许操作可见且启用工具 |
+| DELETE | `/api/tools/:id` | 仅删除自己的用户工具，不能删除内置或他人工具 |
 
 生成提示词工具引用格式为 `@[tool:type:ID:label:icon]`，label 使用 URI 编码。名称和图标只用于展示，不作为授权依据。服务端在任务入队及执行前检查用户可见性、启用状态、工具类型和生成模式；无效、越权、嵌套工具或数据库错误必须失败，不能把未解析 token 发送给模型。风格和九宫格仅用于图片，运镜和特效仅用于视频。入队校验不冻结工具快照：排队期间删除工具将导致执行失败。
+
+## 平台技能策展
+
+新增登录读取 `/api/skills/curation` 与管理员 GET／PUT `/api/admin/skill-curation`；原技能列表仅在策展开启时应用新增分类筛选，响应结构不变。见 [接口与行为](./skill-curation)。
+
+一级分类扩展：管理写入增加 root 命令，assignment.rootId 与子分类完整集合一起保存；列表增加 platformRootId 筛选。关闭模式继续忽略新增筛选。
