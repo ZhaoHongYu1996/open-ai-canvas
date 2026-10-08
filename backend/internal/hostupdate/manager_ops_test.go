@@ -226,4 +226,10 @@ func TestDeployComposeAgentVariablesFallbackForLegacyUpdater(t *testing.T) {
 			t.Errorf("docker-compose.deploy.yml is missing fallback %s…}", fallback)
 		}
 	}
+	if strings.Contains(compose, "ghcr.io/ddcat-ai/open-ai-canvas-yingce-agent") {
+		t.Fatal("docker-compose.deploy.yml must not fall back to the upstream Agent image")
+	}
+	if !strings.Contains(compose, "ghcr.io/zhaohongyu1996/open-ai-canvas-yingce-agent") {
+		t.Fatal("docker-compose.deploy.yml must fall back to the ZhaoHongYu1996 Agent image")
+	}
 }

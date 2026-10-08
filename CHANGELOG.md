@@ -1,5 +1,9 @@
 ﻿# CHANGELOG
 
+## v1.6.1.7
+
+- 修复部署 Compose 在未显式配置 `CANVAS_YINGCE_AGENT_IMAGE` 时错误回退到上游 `ddcat-ai`，改为当前仓库 `ZhaoHongYu1996` 的 Agent 镜像。
+
 ## v1.6.1.6
 
 - 稳定预演台 Chrome E2E 的保存失败关闭确认场景，限定弹窗按钮并保留一次真实点击重试与失败状态诊断。
