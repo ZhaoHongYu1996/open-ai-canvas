@@ -233,3 +233,14 @@ func TestDeployComposeAgentVariablesFallbackForLegacyUpdater(t *testing.T) {
 		t.Fatal("docker-compose.deploy.yml must fall back to the ZhaoHongYu1996 Agent image")
 	}
 }
+
+func TestComposeDownloadURLsPreferReleaseAsset(t *testing.T) {
+	got := composeDownloadURLs("ZhaoHongYu1996/open-ai-canvas", "v1.6.1.7", "docker-compose.deploy.yml")
+	want := []string{
+		"https://github.com/ZhaoHongYu1996/open-ai-canvas/releases/download/v1.6.1.7/docker-compose.deploy.yml",
+		"https://raw.githubusercontent.com/ZhaoHongYu1996/open-ai-canvas/v1.6.1.7/docker-compose.deploy.yml",
+	}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("compose download URLs = %#v, want %#v", got, want)
+	}
+}

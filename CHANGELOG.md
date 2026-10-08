@@ -1,5 +1,9 @@
 ﻿# CHANGELOG
 
+## v1.6.1.8
+
+- 修复 Host Updater 下载 Compose 时依赖 `raw.githubusercontent.com` 导致连接被重置的问题，优先使用 Release 资产地址，并保留 Raw 地址作为回退。
+
 ## v1.6.1.7
 
 - 修复部署 Compose 在未显式配置 `CANVAS_YINGCE_AGENT_IMAGE` 时错误回退到上游 `ddcat-ai`，改为当前仓库 `ZhaoHongYu1996` 的 Agent 镜像。

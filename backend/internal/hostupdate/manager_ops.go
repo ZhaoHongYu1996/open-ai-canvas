@@ -87,33 +87,36 @@ func (m *Manager) currentVersion() (string, error) {
 }
 
 func (m *Manager) prepareTargetCompose(targetVersion string) (string, error) {
-	url := fmt.Sprintf("https://raw.githubusercontent.com/%s/%s/%s", m.config.Repository, targetVersion, m.config.ComposeFile)
-	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
-	defer cancel()
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return "", err
-	}
-	response, err := m.httpClient.Do(request)
-	if err != nil {
-		return "", fmt.Errorf("下载目标 Compose：%w", err)
-	}
-	defer response.Body.Close()
-	if response.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("下载目标 Compose 返回 HTTP %d", response.StatusCode)
-	}
-	data, err := io.ReadAll(io.LimitReader(response.Body, 2<<20))
-	if err != nil {
-		return "", err
+	var downloadErrors []string
+	var data []byte
+	for _, url := range composeDownloadURLs(m.config.Repository, targetVersion, m.config.ComposeFile) {
+		candidate, err := m.downloadReleaseAsset(url, 2<<20)
+		if err != nil {
+			downloadErrors = append(downloadErrors, fmt.Sprintf("%s：%v", url, err))
+			continue
+		}
+		if len(candidate) == 0 {
+			downloadErrors = append(downloadErrors, fmt.Sprintf("%s：文件为空", url))
+			continue
+		}
+		data = candidate
+		break
 	}
 	if len(data) == 0 {
-		return "", errors.New("目标 Compose 文件为空")
+		return "", fmt.Errorf("下载目标 Compose：%s", strings.Join(downloadErrors, "；"))
 	}
 	path := filepath.Join(m.config.StateDir, "compose-"+strings.TrimPrefix(targetVersion, "v")+".next.yml")
 	if err := os.WriteFile(path, data, 0o600); err != nil {
 		return "", fmt.Errorf("保存目标 Compose：%w", err)
 	}
 	return path, nil
+}
+
+func composeDownloadURLs(repository, targetVersion, composeFile string) []string {
+	return []string{
+		fmt.Sprintf("https://github.com/%s/releases/download/%s/%s", repository, targetVersion, composeFile),
+		fmt.Sprintf("https://raw.githubusercontent.com/%s/%s/%s", repository, targetVersion, composeFile),
+	}
 }
 
 func (m *Manager) preflight(composePath, targetVersion string) error {
