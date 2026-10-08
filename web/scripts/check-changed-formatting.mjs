@@ -11,8 +11,15 @@ export async function checkChangedFormatting({ cwd = process.cwd(), baseSha = pr
         if (result.status !== 0) throw new Error(`git ${args.join(" ")}: ${result.stderr}`);
         return result.stdout;
     };
+    const gitSucceeds = (args) => {
+        const result = spawnSync("git", args, { cwd, encoding: "utf8", maxBuffer: 32 * 1024 * 1024 });
+        if (result.error) throw result.error;
+        return result.status === 0;
+    };
     const head = git(["rev-parse", "--verify", `${headSha}^{commit}`]).trim();
-    const parent = git(["rev-list", "--parents", "-n", "1", head]).trim().split(" ")[1] || null;
+    const parents = git(["rev-list", "--parents", "-n", "1", head]).trim().split(" ").slice(1);
+    const parent = parents[0] || null;
+    const mergeSource = parents[1] || null;
     let base = parent;
     if (baseSha && !/^0+$/.test(baseSha)) {
         // 强制改写提交历史后，push 事件里的 before 可能已不在 checkout 中；
@@ -35,9 +42,14 @@ export async function checkChangedFormatting({ cwd = process.cwd(), baseSha = pr
         const filepath = path.join(cwd, file);
         const info = await prettier.getFileInfo(filepath, { ignorePath: path.join(cwd, ".prettierignore") });
         if (info.ignored) continue;
+        // A merge commit compares against its first parent, but files brought in
+        // unchanged from the second parent are not new work for this commit.
+        // Keep their original formatting status instead of rechecking the whole
+        // source branch as if every file had just been added to the target branch.
+        if (mergeSource && gitSucceeds(["diff", "--quiet", mergeSource, head, "--", file])) continue;
         const options = { ...(await prettier.resolveConfig(filepath)), filepath };
         // 只允许明确的历史格式问题跳过；语法、Git、文件读取错误全部向上抛出。
-        const previous = previousFiles.has(file) ? git(["show", `${base}:${prefix}${file}`]) : null;
+        const previous = previousFiles.has(file) ? git(["show", `${base}:${prefix}${file}`]) : mergeSource && gitSucceeds(["cat-file", "-e", `${mergeSource}:${prefix}${file}`]) ? git(["show", `${mergeSource}:${prefix}${file}`]) : null;
         if (previous !== null && !(await prettier.check(previous, options))) {
             log(`Skipping legacy unformatted file: ${file}`);
             continue;
