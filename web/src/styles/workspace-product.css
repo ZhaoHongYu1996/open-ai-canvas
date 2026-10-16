@@ -297,6 +297,7 @@
 .app-product-workspace [data-category="ecommerce"] { --category-accent: var(--product-accent-orange); }
 .app-product-workspace [data-category="creative"] { --category-accent: var(--product-accent-pink); }
 .app-product-workspace [data-category="social"] { --category-accent: var(--product-accent-green); }
+.app-product-workspace [data-category="audio"] { --category-accent: var(--product-accent-pink); }
 
 .app-product-workspace .library-page > div,
 .app-product-workspace .studio-collection-page > div {

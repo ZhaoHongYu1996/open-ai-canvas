@@ -3,7 +3,7 @@ import { AppModal } from "@/components/ui/product/app-modal";
 import { App, Button, Dropdown, Input } from "antd";
 import { Tooltip } from "@/components/ui/base/tooltip";
 
-import { Boxes, Check, Clapperboard, FolderInput, FolderPlus, Globe2, Heart, Library, LoaderCircle, Megaphone, MoreHorizontal, Palette, Plus, Puzzle, Search, ShoppingBag, Sparkles, Trash2, UserRound } from "lucide-react";
+import { Boxes, Check, Clapperboard, FileAudio, FolderInput, FolderPlus, Globe2, Heart, Library, LoaderCircle, Megaphone, MoreHorizontal, Palette, Plus, Puzzle, Search, ShoppingBag, Sparkles, Trash2, UserRound } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 
@@ -31,6 +31,7 @@ const categoryIcons: Record<string, LucideIcon> = {
     ecommerce: ShoppingBag,
     creative: Palette,
     social: Megaphone,
+    audio: FileAudio,
     others: Puzzle,
 };
 const categoryIconOf = (value: string) => categoryIcons[value] ?? Boxes;
