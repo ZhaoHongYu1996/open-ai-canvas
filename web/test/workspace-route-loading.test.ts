@@ -36,8 +36,11 @@ describe("workspace route loading", () => {
         const navigation = source("../src/components/layout/workspace-sidebar-nav.tsx");
         const normalizedRouter = router.replace(/\s+/g, " ");
 
-        expect(normalizedRouter).toContain('{ path: "/", element: deferred(<CreatePage />) }');
-        expect(normalizedRouter).toContain('{ path: "/create", element: deferred(<CreatePage />) }');
+        expect(router).toContain('{ path: "/", element: deferred(<CreatePage />) }');
+        expect(router).toContain('{ path: "/create", element: deferred(<CreatePage />) }');
+        expect(router).toContain("<RequireAuth allowAnonymous={isGuestWorkspacePath(pathname)}>");
+        expect(router).toContain('{ path: "/assets", element: <RequireAuth>{deferred(<AssetsPage />)}</RequireAuth> }');
+        expect(router).toMatch(/path: "\/canvas\/:id",\s+element: \(\s+<RequireAuth>\s+<CanvasProjectPage \/>\s+<\/RequireAuth>\s+\),/);
         expect(router).not.toContain('path: "/home"');
         expect(router).not.toContain("HomePage");
         expect(navigation).toContain('{ ...toolItem("create", "/"), id: "home", title: "创作" }');
