@@ -73,7 +73,7 @@ func (r *Repository) OtherAssetResourceReferences(userID string, excludedAssetID
 	ids := make([]string, 0, len(assets))
 	for _, asset := range assets {
 		ids = append(ids, asset.ID)
-		snapshot.Documents = append(snapshot.Documents, ResourceReferenceDocument{Kind: "素材", ID: asset.ID, PrimaryJSON: asset.PayloadJSON})
+		snapshot.Documents = append(snapshot.Documents, ResourceReferenceDocument{Kind: "素材", ID: asset.ID, Title: asset.Title, PrimaryJSON: asset.PayloadJSON})
 	}
 	if len(ids) == 0 {
 		return snapshot, nil
@@ -174,12 +174,8 @@ func (r *Repository) ResourceReferenceSnapshotExcludingAssets(userID string, exc
 		}
 	}
 
-	var assets []model.Asset
-	assetQuery := r.db.Where("user_id = ?", userID)
-	if len(excludingAssetIDs) > 0 {
-		assetQuery = assetQuery.Where("id NOT IN ?", excludingAssetIDs)
-	}
-	if err := assetQuery.Find(&assets).Error; err != nil {
+	otherAssets, err := r.OtherAssetResourceReferences(userID, excludingAssetIDs)
+	if err != nil {
 		return snapshot, err
 	}
 	snapshot.Documents = append(snapshot.Documents, otherAssets.Documents...)

@@ -766,7 +766,7 @@ async function saveFailureCloseGuard(cdp, baseUrl) {
             delete window.__previsStayClickProbe;
         })()`);
     }
-    const modalGone = await cdp.poll(
+    let modalGone = await cdp.poll(
         `![...document.querySelectorAll('.ant-modal-confirm')].some((modal) => {
             const rect = modal.getBoundingClientRect();
             const style = getComputedStyle(modal);
