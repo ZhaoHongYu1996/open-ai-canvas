@@ -335,11 +335,13 @@ function syncOverlayContent(scene: OverlayScene, props: CanvasLeaferGraphicsLaye
     scene.draft.visible = Boolean(connecting);
     if (connecting) {
         scene.draft.set({
+            // 草稿线始终跟着指针走，不吸附目标节点；是否成线只在松手时判定。
+            // 目标节点只负责呼吸高亮，见 data-node-state="target"。
             path: activeConnectionPath(
                 props.nodeById.get(connecting.nodeId),
                 connecting,
                 props.mouseWorld,
-                props.connectionTargetNodeId ? props.nodeById.get(props.connectionTargetNodeId) : undefined,
+                undefined,
                 props.scriptScrollTopById[connecting.nodeId] || 0,
             ),
             stroke: props.theme.accent.primary,
@@ -352,14 +354,14 @@ function syncOverlayContent(scene: OverlayScene, props: CanvasLeaferGraphicsLaye
     const batch = props.batchConnectionPreview;
     scene.batchDrafts.visible = Boolean(batch);
     if (!batch) return;
-    const target = batch.targetNodeId ? props.nodeById.get(batch.targetNodeId) : undefined;
     const stroke = batch.status === "invalid" ? props.theme.accent.danger : batch.status === "partial" ? props.theme.node.activeStroke : props.theme.accent.primary;
     batch.sourceNodeIds.forEach((sourceNodeId) => {
         const source = props.nodeById.get(sourceNodeId);
         if (!source) return;
         const handle: ConnectionHandle = { nodeId: source.id, handleType: "source" };
         scene.batchDrafts.add(new Path({
-            path: activeConnectionPath(source, handle, batch.mouseWorld, target, props.scriptScrollTopById[source.id] || 0),
+            // 同样只跟手，不吸附目标；目标节点仅以呼吸高亮提示。
+            path: activeConnectionPath(source, handle, batch.mouseWorld, undefined, props.scriptScrollTopById[source.id] || 0),
             stroke,
             strokeWidth: 1.4,
             strokeScaleFixed: true,

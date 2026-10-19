@@ -61,6 +61,11 @@ type BatchConnectionDropTarget = ConnectionDropTarget;
 const CONNECTION_SNAP_RADIUS = 56;
 const NODE_STATUS_IDLE = "idle" as const;
 
+/** 节点矩形本身也是接入区；端口圆区仍优先，避免整块命中不稳定。 */
+function pointInsideNode(node: CanvasNodeData, point: Position) {
+    return point.x >= node.position.x && point.x <= node.position.x + node.width && point.y >= node.position.y && point.y <= node.position.y + node.height;
+}
+
 function selectRunningHubWorkflow(config: AiConfig) {
     const capability = normalizeRunningHubCapability(config.runningHub.capability);
     return config.runningHub.workflows.find((item) => item.workflowId.trim() === config.runningHub.workflowId.trim()
@@ -441,26 +446,24 @@ export function useCanvasConnectionController({
                 const scrollTop = scriptScrollTopById[node.id] || 0;
                 const targetHandleId = node.type === CanvasNodeType.Script ? storyboardHandleAtY(node, world.y, scrollTop) : node.type === CanvasNodeType.BatchTable ? batchReferenceHandleAtY(node, world.y, handleRadius) : undefined;
                 if ((node.type === CanvasNodeType.Script || node.type === CanvasNodeType.BatchTable) && !targetHandleId) return;
-                // Ordinary nodes expose one centered input/output port. Only
-                // storyboard rows have a meaningful vertical target position.
+                // 端口圆区仍是最高优先级命中；节点整个矩形也作为接入区，
+                // 不再要求把指针精确对准端口或 + 号。
+                // Only storyboard rows have a meaningful vertical target position.
                 const targetAnchorRatio = undefined;
                 const anchor = getConnectionTargetAnchor(node, current, targetHandleId, scrollTop);
                 const dx = world.x - anchor.x;
                 const dy = world.y - anchor.y;
-                // Do not treat the node body or a rectangular padding band as a
-                // connection target. LibTV snaps only inside the circular
-                // quick-add area centred on the corresponding side handle.
-                const hitsSnapZone = dx * dx + dy * dy <= handleRadius * handleRadius;
-                if (!hitsSnapZone) return;
+                const inPortZone = dx * dx + dy * dy <= handleRadius * handleRadius;
+                if (!inPortZone && !pointInsideNode(node, world)) return;
                 isNearNode = true;
+                const priority = inPortZone ? 0 : 1;
+                if (priority >= bestPriority) return;
                 const normalized = node.id === current.nodeId ? null : normalizeConnection(current.nodeId, node.id, nodesRef.current, current.handleType);
                 if (!normalized || canvasConnectionError(config, nodesRef.current, connectionsRef.current, normalized)) return;
-                if (1 < bestPriority) {
-                    bestNodeId = node.id;
-                    bestHandleId = targetHandleId;
-                    bestAnchorRatio = targetAnchorRatio;
-                    bestPriority = 1;
-                }
+                bestNodeId = node.id;
+                bestHandleId = targetHandleId;
+                bestAnchorRatio = targetAnchorRatio;
+                bestPriority = priority;
             });
         return { nodeId: bestNodeId, handleId: bestHandleId, anchorRatio: bestAnchorRatio, isNearNode };
     }, [config, connectionsRef, nodesRef, screenToCanvas, scriptScrollTopById, viewportRef]);
@@ -492,16 +495,16 @@ export function useCanvasConnectionController({
                 const anchor = getConnectionTargetAnchor(node, current, targetHandleId, scrollTop);
                 const dx = world.x - anchor.x;
                 const dy = world.y - anchor.y;
-                const hitsSnapZone = dx * dx + dy * dy <= handleRadius * handleRadius;
-                if (!hitsSnapZone) return;
+                const inPortZone = dx * dx + dy * dy <= handleRadius * handleRadius;
+                if (!inPortZone && !pointInsideNode(node, world)) return;
                 isNearNode = true;
+                const priority = inPortZone ? 0 : 1;
+                if (priority >= bestPriority) return;
                 if (!hasBatchConnectionCandidate(sourceNodeIds, node.id, nodesRef.current)) return;
-                if (1 < bestPriority) {
-                    bestNodeId = node.id;
-                    bestHandleId = targetHandleId;
-                    bestAnchorRatio = targetAnchorRatio;
-                    bestPriority = 1;
-                }
+                bestNodeId = node.id;
+                bestHandleId = targetHandleId;
+                bestAnchorRatio = targetAnchorRatio;
+                bestPriority = priority;
             });
         return { nodeId: bestNodeId, handleId: bestHandleId, anchorRatio: bestAnchorRatio, isNearNode };
     }, [nodesRef, screenToCanvas, scriptScrollTopById, viewportRef]);
@@ -711,8 +714,9 @@ export function useCanvasConnectionController({
             if (!event) return;
             const batch = batchConnectionPreviewRef.current;
             if (batch && (batchConnectionPointerIdRef.current === null || batchConnectionPointerIdRef.current === event.pointerId)) {
-                const target = getBatchConnectionDropTarget(event.clientX, event.clientY, batch.sourceNodeIds);
                 const mouseWorld = screenToCanvas(event.clientX, event.clientY);
+                // 拖拽中不提交连接；命中结果只用于目标节点的呼吸反馈。
+                const target = getBatchConnectionDropTarget(event.clientX, event.clientY, batch.sourceNodeIds);
                 previewBatchConnection(batch.sourceNodeIds, target.nodeId, target.handleId, target.anchorRatio, mouseWorld);
                 return;
             }
@@ -742,11 +746,11 @@ export function useCanvasConnectionController({
             } else {
                 updateConnectionReplaceHover(null);
             }
-            const dropTarget = getConnectionDropTarget(event.clientX, event.clientY, current);
+            // 拖拽中不再命中节点；连接目标只在 pointerup 的 finishConnection 中判定。
+            // 但保留悬停探测：仅用来给“将被连接”的节点加呼吸反馈，不拦截也不吸附。
+            const hoverTarget = getConnectionDropTarget(event.clientX, event.clientY, current);
             const point = screenToCanvas(event.clientX, event.clientY);
-            setConnectionApproach((previous) => latchCanvasConnectionApproach(previous, dropTarget.nodeId, point));
-            setConnectionTargetNodeId(dropTarget.nodeId);
-            setConnectionTargetAnchorRatio(dropTarget.anchorRatio);
+            setConnectionTargetNodeId(hoverTarget.nodeId);
             setMouseWorld(point);
         };
         const handlePointerMove = (event: PointerEvent) => {

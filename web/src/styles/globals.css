@@ -8473,6 +8473,30 @@ html:not(.dark) .canvas-generation-settings-trigger.ant-btn[aria-expanded="true"
         will-change: transform;
     }
 
+    /* 连线拖拽时，指针所在的可连接节点呼吸提示；松手才真正建立连接。 */
+    .canvas-node-shell[data-node-state="target"] {
+        animation: canvas-node-target-breathe 1.6s ease-in-out infinite;
+    }
+
+    @keyframes canvas-node-target-breathe {
+        0%, 100% {
+            box-shadow: 0 0 0 1px color-mix(in srgb, var(--node-target-color) 55%, transparent),
+                0 0 10px 2px color-mix(in srgb, var(--node-target-color) 14%, transparent);
+        }
+        50% {
+            box-shadow: 0 0 0 1px var(--node-target-color),
+                0 0 24px 7px color-mix(in srgb, var(--node-target-color) 30%, transparent);
+        }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .canvas-node-shell[data-node-state="target"] {
+            animation: none;
+            box-shadow: 0 0 0 1px var(--node-target-color),
+                0 0 18px 4px color-mix(in srgb, var(--node-target-color) 22%, transparent);
+        }
+    }
+
     .no-motion .canvas-node-shell[data-connection-tilt="true"] {
         transform: none;
         transition: none;

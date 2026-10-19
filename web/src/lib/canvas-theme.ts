@@ -19,6 +19,8 @@ export const canvasThemes = {
             edge: "rgba(15,23,42,.16)",
             shadow: "0 6px 18px rgba(15,23,42,.08)",
             hoverShadow: "0 10px 24px rgba(15,23,42,.12)",
+            // 选中外发光：1px 实边确定边界，外层柔光不遮挡相邻节点内容。
+            selectionGlow: "0 0 0 1px rgba(17,17,17,.85), 0 0 20px 4px rgba(17,17,17,.18)",
             activeStroke: "#111827",
             placeholder: "#9ca3af",
             text: "#111827",
@@ -86,6 +88,7 @@ export const canvasThemes = {
             edge: "rgba(255,255,255,.18)",
             shadow: "0 8px 24px rgba(0,0,0,.34)",
             hoverShadow: "0 12px 30px rgba(0,0,0,.46)",
+            selectionGlow: "0 0 0 1px rgba(245,245,245,.8), 0 0 24px 5px rgba(255,255,255,.16)",
             activeStroke: "#f1f1f1",
             placeholder: "#737373",
             text: "#ededed",

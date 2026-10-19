@@ -234,10 +234,11 @@ export const CanvasNode = React.memo(function CanvasNode({
                     background: hasImageContent || hasVideoContent ? "transparent" : theme.node.fill,
                     // 固定占位但不绘制描边，避免聚焦切换时边框宽度变化造成白边跳动。
                     border: isComposerNode ? "0" : "1px solid transparent",
-                    boxShadow: isComposerNode || !showChrome ? "none" : isSelected || isFocusRelated ? theme.node.hoverShadow : theme.node.shadow,
+                    boxShadow: isComposerNode || !showChrome ? "none" : isSelected || isFocusRelated ? theme.node.selectionGlow : theme.node.shadow,
                     outline: !showChrome && isActive ? `1px solid ${theme.node.activeStroke}` : undefined,
                     "--connection-tilt-x": `${connectionTilt?.rotateX || 0}deg`,
                     "--connection-tilt-y": `${connectionTilt?.rotateY || 0}deg`,
+                    "--node-target-color": theme.node.activeStroke,
                     transformOrigin: connectionTilt?.origin,
                 } as React.CSSProperties}
                 onMouseDown={(event) => onMouseDown(event, data.id)}
