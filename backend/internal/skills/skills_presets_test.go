@@ -12,13 +12,13 @@ func TestAudioBuiltinSkillCategoryIsPublished(t *testing.T) {
 	}
 	foundAudioSkill := false
 	for _, item := range packages {
-		if item.skill.ID == "doubao-audio-prompt" && item.skill.Tag == "audio" {
+		if item.skill.ID == "doubao-audio-prompt" && item.skill.Tag == "creative" {
 			foundAudioSkill = true
 			break
 		}
 	}
 	if !foundAudioSkill {
-		t.Fatal("doubao-audio-prompt builtin must retain its audio category")
+		t.Fatal("doubao-audio-prompt builtin must retain the Dev creative category")
 	}
 	for _, category := range skillCategories() {
 		if category.Value == "audio" && category.Label == "音频创作" {
