@@ -39,7 +39,11 @@ func TestOfficialProtocolPackagesAreSelfContainedDeclarativePlugins(t *testing.T
 			// the declarative AI provider contract covered by this catalog test.
 			continue
 		}
-		if pkg.Manifest.APIVersion != "yingce.plugin/v2" {
+		wantAPIVersion := "yingce.plugin/v2"
+		if filepath.Base(path) == "tsai.yingce-plugin" {
+			wantAPIVersion = "yingce.plugin/v1"
+		}
+		if pkg.Manifest.APIVersion != wantAPIVersion {
 			t.Fatalf("%s apiVersion = %q", filepath.Base(path), pkg.Manifest.APIVersion)
 		}
 		if strings.HasPrefix(strings.TrimSpace(pkg.Manifest.Runtime.Backend), "host:") {
@@ -618,6 +622,17 @@ func TestOfficialTSAIMapsGatewayContracts(t *testing.T) {
 	if body["model"] != textRequest.Model || body["prompt"] != textRequest.Prompt || body["duration"] != float64(5) || body["aspect_ratio"] != "16:9" || body["resolution"] != "768P" {
 		t.Fatalf("TSAI MiniMax text body = %#v", body)
 	}
+	h3OptionsCreate, err := minimax.BuildCreate(context.Background(), RequestContext{Request: GenerationRequest{
+		Model: "MiniMax/MiniMax-H3", Prompt: "跟随角色推进镜头。", Output: OutputOptions{Count: 2},
+		Extra: map[string]any{"camera_motion": "tracking", "seed": 42},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	h3OptionsBody := manifestTestBody(t, h3OptionsCreate)
+	if h3OptionsBody["num_outputs_per_prompt"] != float64(2) || h3OptionsBody["camera_motion"] != "tracking" || h3OptionsBody["seed"] != float64(42) || h3OptionsBody["watermark"] != nil {
+		t.Fatalf("TSAI MiniMax documented optional fields = %#v", h3OptionsBody)
+	}
 
 	frameRequest := GenerationRequest{
 		Model: "MiniMax/MiniMax-H3", Prompt: "让两个画面自然过渡。", Duration: 5, Resolution: "768P",
@@ -676,10 +691,14 @@ func TestOfficialTSAIMapsGatewayContracts(t *testing.T) {
 	}
 
 	seedanceRequest := GenerationRequest{
-		Model: "doubao-seedance-2-0-mini-260615", Prompt: "参考图片1的主体制作广告。", Duration: 11, AspectRatio: "16:9", Resolution: "720P", GenerateAudio: true,
-		Images: []MediaReference{{URL: "https://cdn.example/subject.jpg", Role: "reference_image", Order: 1}},
-		Videos: []MediaReference{{URL: "https://cdn.example/reference.mp4"}},
-		Audios: []MediaReference{{URL: "https://cdn.example/music.mp3"}},
+		Model: "doubao-seedance-2-0-mini-260615", Prompt: "参考图片1的主体制作广告。", Duration: 11, AspectRatio: "16:9", Resolution: "480p", GenerateAudio: true,
+		Images: []MediaReference{{URL: "https://cdn.example/subject.jpg", Role: "reference_image", Order: 2}},
+		Videos: []MediaReference{{URL: "https://cdn.example/reference.mp4", Order: 1}},
+		Audios: []MediaReference{{URL: "https://cdn.example/music.mp3", Order: 3}},
+		Extra:  map[string]any{"seed": 123},
+		ProviderOptions: map[string]map[string]any{
+			"tsai-seedance-mini": {"catalog_channel_id": "catalog-channel-1"},
+		},
 	}
 	seedanceCreate, err := seedance.BuildCreate(context.Background(), RequestContext{Request: seedanceRequest})
 	if err != nil {
@@ -689,22 +708,29 @@ func TestOfficialTSAIMapsGatewayContracts(t *testing.T) {
 		t.Fatalf("TSAI Seedance create = %#v", seedanceCreate)
 	}
 	seedanceBody := manifestTestBody(t, seedanceCreate)
-	if seedanceBody["ratio"] != "16:9" || seedanceBody["resolution"] != "720p" || seedanceBody["generate_audio"] != true || seedanceBody["mode"] != "reference" {
+	if seedanceBody["prompt"] != seedanceRequest.Prompt || seedanceBody["ratio"] != "16:9" || seedanceBody["resolution"] != "480p" || seedanceBody["generate_audio"] != true || seedanceBody["seed"] != float64(123) || seedanceBody["catalog_channel_id"] != "catalog-channel-1" {
 		t.Fatalf("TSAI Seedance body = %#v", seedanceBody)
 	}
-	content, _ := seedanceBody["content"].([]any)
-	if len(content) != 4 {
-		t.Fatalf("TSAI Seedance content = %#v", content)
+	conditions, _ := seedanceBody["conditions"].([]any)
+	if len(conditions) != 3 {
+		t.Fatalf("TSAI Seedance conditions = %#v", conditions)
 	}
-	textItem, _ := content[0].(map[string]any)
-	imageItem, _ := content[1].(map[string]any)
-	videoItem, _ := content[2].(map[string]any)
-	audioItem, _ := content[3].(map[string]any)
-	imageURL, _ := imageItem["image_url"].(map[string]any)
-	videoURL, _ := videoItem["video_url"].(map[string]any)
-	audioURL, _ := audioItem["audio_url"].(map[string]any)
-	if textItem["type"] != "text" || textItem["text"] != seedanceRequest.Prompt || imageItem["role"] != "reference_image" || imageURL["url"] != "https://cdn.example/subject.jpg" || videoItem["role"] != "reference_video" || videoURL["url"] != "https://cdn.example/reference.mp4" || audioItem["role"] != "reference_audio" || audioURL["url"] != "https://cdn.example/music.mp3" {
-		t.Fatalf("TSAI Seedance content items = %#v", content)
+	videoCondition, _ := conditions[0].(map[string]any)
+	imageCondition, _ := conditions[1].(map[string]any)
+	audioCondition, _ := conditions[2].(map[string]any)
+	if imageCondition["type"] != "image" || imageCondition["role"] != "reference" || imageCondition["uri"] != "https://cdn.example/subject.jpg" || videoCondition["type"] != "video" || videoCondition["role"] != "reference" || videoCondition["uri"] != "https://cdn.example/reference.mp4" || audioCondition["type"] != "audio" || audioCondition["role"] != "reference" || audioCondition["uri"] != "https://cdn.example/music.mp3" {
+		t.Fatalf("TSAI Seedance condition items = %#v", conditions)
+	}
+	seedanceTextCreate, err := seedance.BuildCreate(context.Background(), RequestContext{Request: GenerationRequest{Model: "seedance-2.0", Prompt: "生成海岸日落镜头。"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	seedanceTextBody := manifestTestBody(t, seedanceTextCreate)
+	if seedanceTextBody["model"] != "seedance-2.0" || seedanceTextBody["conditions"] != nil {
+		t.Fatalf("TSAI Seedance text-to-video body = %#v", seedanceTextBody)
+	}
+	if seedanceTextBody["prompt"] != "生成海岸日落镜头。" {
+		t.Fatalf("TSAI Seedance text-to-video prompt = %#v", seedanceTextBody)
 	}
 
 	seedreamCreate, err := seedream.BuildCreate(context.Background(), RequestContext{Request: GenerationRequest{
@@ -757,6 +783,61 @@ func TestOfficialTSAIMapsGatewayContracts(t *testing.T) {
 	chatBody := manifestTestBody(t, chatCreate)
 	if chatBody["model"] != "deepseek-v4-flash" {
 		t.Fatalf("TSAI chat body = %#v", chatBody)
+	}
+}
+
+func TestUploadableTSAISeedanceMapsPromptResolutionAndRoute(t *testing.T) {
+	packageData, err := os.ReadFile(filepath.Join("..", "..", "..", "plugin-packages", "uploadable", "tsai-upload.yingce-plugin"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pkg, err := ParsePluginPackage(packageData)
+	if err != nil {
+		t.Fatal(err)
+	}
+	uploadInterface := string(pkg.Files["docs/interface.md"])
+	expectedDocumentation := strings.TrimSpace(string(pkg.Files["README.md"])) + "\n\n---\n\n" + strings.TrimSpace(uploadInterface)
+	if strings.TrimSpace(pkg.Manifest.Metadata.Documentation) != expectedDocumentation {
+		t.Fatal("uploadable TSAI manifest documentation is out of sync with packaged files")
+	}
+	assertManifestContractMatchesPackage(t, "uploadable/tsai-upload.yingce-plugin", pkg.ManifestRaw, uploadInterface)
+	adapters, err := LoadInstalledProviders(pkg.ManifestRaw, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var seedance Adapter
+	for _, adapter := range adapters {
+		if adapter.Metadata().ID == "tsai-upload-seedance-mini" {
+			seedance = adapter
+			break
+		}
+	}
+	if seedance == nil {
+		t.Fatal("uploadable TSAI package has no Seedance provider")
+	}
+	bindings := map[string]string{}
+	for _, parameter := range seedance.Metadata().Parameters {
+		if parameter.Binding != "" {
+			bindings[parameter.Name] = parameter.Binding
+		}
+	}
+	if bindings["catalog_channel_id"] != "providerOptions.tsai-upload-seedance-mini.catalog_channel_id" || bindings["catalog_group_id"] != "providerOptions.tsai-upload-seedance-mini.catalog_group_id" {
+		t.Fatalf("uploadable TSAI Seedance route bindings = %#v", bindings)
+	}
+	request := GenerationRequest{
+		Model: "seedance-2.0", Prompt: "生成一段海岸日落视频。", Duration: 6,
+		AspectRatio: "16:9", Resolution: "480p",
+		ProviderOptions: map[string]map[string]any{
+			"tsai-upload-seedance-mini": {"catalog_channel_id": "catalog-channel-1"},
+		},
+	}
+	spec, err := seedance.BuildCreate(context.Background(), RequestContext{Request: request})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := manifestTestBody(t, spec)
+	if body["prompt"] != request.Prompt || body["resolution"] != "480p" || body["catalog_channel_id"] != "catalog-channel-1" {
+		t.Fatalf("uploadable TSAI Seedance body = %#v", body)
 	}
 }
 

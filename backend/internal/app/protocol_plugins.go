@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -720,26 +721,26 @@ func (c *pluginRuntime) install(data []byte, fileName string) (PluginView, error
 	c.mutationMu.Lock()
 	defer c.mutationMu.Unlock()
 	if len(data) == 0 || len(data) > protocol.PluginPackageMaxBytes {
-		return PluginView{}, fmt.Errorf("plugin package must be between 1 and %d bytes", protocol.PluginPackageMaxBytes)
+		return PluginView{}, NewAppError(http.StatusBadRequest, fmt.Sprintf("插件包大小必须在 1 到 %d 字节之间", protocol.PluginPackageMaxBytes))
 	}
 	pkg, err := protocol.ParsePluginPackage(data)
 	if err != nil {
-		return PluginView{}, err
+		return PluginView{}, WrapAppError(http.StatusBadRequest, "插件包校验失败："+err.Error(), err)
 	}
 	manifest := pkg.Manifest
 	if strings.HasPrefix(strings.TrimSpace(manifest.Runtime.Backend), "host:") {
-		return PluginView{}, errors.New("上传插件不能使用宿主内置执行器")
+		return PluginView{}, NewAppError(http.StatusBadRequest, "上传插件不能使用宿主内置执行器")
 	}
 	if len(manifest.Contributes.PaymentProviders) == 0 {
 		if _, err := protocol.LoadInstalledProviders(pkg.ManifestRaw, nil); err != nil {
-			return PluginView{}, err
+			return PluginView{}, WrapAppError(http.StatusBadRequest, "插件 Provider 清单无效："+err.Error(), err)
 		}
 	}
 	c.mu.RLock()
 	existing, exists := c.plugins[manifest.Metadata.ID]
 	c.mu.RUnlock()
 	if exists && isBuiltInPluginSource(existing.Source) && !isPaymentPluginManifest(manifest) {
-		return PluginView{}, fmt.Errorf("内置插件 %q 不能通过上传覆盖", manifest.Metadata.ID)
+		return PluginView{}, NewAppError(http.StatusConflict, fmt.Sprintf("内置插件 %q 不能通过上传覆盖；请改用独立插件 ID", manifest.Metadata.ID))
 	}
 	manifest.Metadata.Enabled = !exists || existing.Metadata.Enabled
 	manifestData, err := json.Marshal(manifest)

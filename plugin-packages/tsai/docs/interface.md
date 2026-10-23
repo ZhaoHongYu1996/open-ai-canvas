@@ -1,13 +1,15 @@
 # TSAI 网关接口字段
 
+该包使用 `yingce.plugin/v1` 统一 Manifest。协议和配置同属一个 `.yingce-plugin` 生命周期；包内不含 Web 入口代码，所有上游请求都由宿主声明式运行时发送。
+
 ## 协议身份
 
 - 插件 ID：`tsai`。
-- Provider：`tsai-chat`（文本）、`tsai-minimax-h3`（视频）、`tsai-seedance-mini`（视频）、`tsai-seedream`（图片）。
+- Provider：`tsai-chat`（文本）、`tsai-minimax-h3`（视频）、`tsai-seedance-mini`（Seedance 2.0 与 2.0 mini 视频）、`tsai-seedream`（图片）。
 - 默认 Base URL：`https://api.alifenqi.com:8188`，不要再重复写 `/v1`。
 - 鉴权：渠道密钥，类型 `bearer`，请求头 `Authorization: Bearer <apiKey>`。
 - 对话：`POST /v1/chat/completions`，OpenAI Chat Completions 格式。
-- MiniMax H3 / Seedance 2.0 mini 创建：`POST /v1/videos/generations`。
+- MiniMax H3 / Seedance 2.0 / 2.0 mini 创建：`POST /v1/videos/generations`。
 - 视频查询：`GET /v1/videos/{{taskId}}`。
 - Seedream 4.5 创建：`POST /v1/images/generations`。
 - 图片长任务查询：`GET /v1/images/generations/{{taskId}}`。
@@ -24,18 +26,21 @@
 
 | 统一字段 | 类型 | 必填 | 实际上游映射 | 说明 |
 | --- | --- | --- | --- | --- |
-| `model` | string | 是 | `model` | 模型列表中的 ID，例如 `deepseek-v4-flash`、`MiniMax/MiniMax-H3`、`doubao-seedance-2-0-mini-260615`、`doubao-seedream-4-5-251128`。 |
+| `model` | string | 是 | `model` | 以 TSAI `GET /v1/models` 为准，例如 `deepseek-v4-flash`、`MiniMax/MiniMax-H3`、Seedance 2.0 / mini 的公开 ID、`doubao-seedream-4-5-251128`。 |
 | `messages` | message[] | 对话必填 | `messages` | OpenAI `role`/`content` 消息列表。 |
 | `instructions` | string | 否 | `system/instructions` | 系统指令。 |
-| `prompt` | string | 视频/图片必填 | `prompt` 或 `content[].text` | MiniMax 最多 7000 字；Seedance / Seedream 最多 20000 字。 |
-| `images` | media[] | 否 | MiniMax：`first_frame_image` / `last_frame_image` / `image_urls`；Seedance：`content[].image_url`；Seedream：`image` | 按 role 拆到首帧、尾帧或普通参考。首尾帧与普通多模态参考不能混用。最多 9 张。 |
-| `videos` | media[] | 否 | MiniMax：`video_urls`；Seedance：`content[].video_url` | 参考视频，最多 3 段。 |
-| `audios` | media[] | 否 | MiniMax：`audio_urls`；Seedance：`content[].audio_url` | 参考音频，最多 3 段。MiniMax 音频必须搭配图片或视频。 |
-| `duration` | integer | 否 | `duration` | 4–15 秒，默认 5。 |
-| `aspectRatio` | string | 否 | MiniMax：`aspect_ratio`；Seedance：`ratio`；Seedream：`size` | 视频画幅或图片尺寸档。 |
-| `resolution` | string | 否 | `resolution` | MiniMax 发送前转大写（`2K`/`768P`/`480P`/`1080P`）；Seedance 转小写（`480p`/`720p`）。 |
-| `generateAudio` | boolean | 否 | `generate_audio` | Seedance 是否同时生成声音，默认 true。 |
-| `watermark` | boolean | 否 | `watermark` | Seedance 默认 false；Seedream 默认 true。MiniMax 当前仅允许 false 或省略。 |
+| `prompt` | string | 视频/图片必填 | `prompt` | MiniMax 最多 7000 字；Seedance / Seedream 最多 20000 字。 |
+| `images` | media[] | 否 | MiniMax：首尾帧字段或 `image_urls`；Seedance：`conditions[]`；Seedream：`image` | Seedance 条件使用 `{type:"image", uri, role}`；首尾帧与普通多模态参考不能混用。最多 9 张。 |
+| `videos` | media[] | 否 | MiniMax：`video_urls`；Seedance：`conditions[]` | Seedance 条件使用 `{type:"video", uri, role:"reference"}`，最多 3 段。 |
+| `audios` | media[] | 否 | MiniMax：`audio_urls`；Seedance：`conditions[]` | Seedance 条件使用 `{type:"audio", uri, role:"reference"}`，最多 3 段；MiniMax 音频必须搭配图片或视频。 |
+| `duration` | integer | 否 | `duration` | MiniMax H3 为 4–15 秒、默认 5；Seedance 按公开模型与所选渠道能力校验。 |
+| `aspectRatio` | string | 否 | MiniMax：`aspect_ratio`；Seedance：`ratio`；Seedream：`size` | 视频画幅或图片尺寸档；Seedance 示例为 `16:9`，范围按公开模型与渠道能力。 |
+| `resolution` | string | 否 | `resolution` | MiniMax 转大写（`2K`/`768P`/`480P`/`1080P`）；Seedance 保留上游枚举大小写。 |
+| `generateAudio` | boolean | 否 | `generate_audio` | Seedance 是否同时生成声音。 |
+| `watermark` | boolean | 否 | Seedream：`watermark` | Seedream 默认 true。MiniMax 只允许 false 或省略；Seedance 不发送该字段。 |
+| `cameraMotion` | string | 否 | MiniMax：`camera_motion` | 使用平台定义的运镜值。 |
+| `seed` | integer | 否 | MiniMax / Seedance：`seed` | 固定随机种子；省略时沿用服务端随机策略。 |
+| `numOutputsPerPrompt` | integer | 否 | MiniMax：`num_outputs_per_prompt` | 数量受模型、账号权益和平台并发限制。 |
 | `temperature` | number | 否 | `temperature` | 对话采样温度。 |
 | `top_p` | number | 否 | `top_p` | 对话核采样。 |
 | `max_tokens` | integer | 否 | `max_tokens` | 对话最大输出 token。 |
@@ -45,7 +50,6 @@
 | `stream` | boolean | 否 | `stream` | 对话流式开关；后台任务当前以最终响应归一。 |
 | `imageCount` | integer | 否 | 固定 1 | Seedream 每次只输出一张图。 |
 | `quality` | string | 否 | 不发送 | TSAI 图片不支持独立质量档。 |
-| `providerOptions` | object | 否 | `provider-specific fields` | 渠道扩展字段。 |
 
 ## 创建请求模型与字段清单
 
@@ -67,10 +71,12 @@
 | `tsai-minimax-h3.create.body.resolution` | `request.resolution` 转大写 |
 | `tsai-minimax-h3.poll.path` | `"/v1/videos/{{taskId}}"` |
 | `tsai-seedance-mini.create.path` | `"/v1/videos/generations"` |
-| `tsai-seedance-mini.create.body.content` | 文本 + 按顺序排列的图片/视频/音频项 |
+| `tsai-seedance-mini.create.body.prompt` | `request.prompt` |
+| `tsai-seedance-mini.create.body.conditions` | 按顺序排列的 `{type, uri, role}` 图片/视频/音频参考；纯文生视频时省略 |
 | `tsai-seedance-mini.create.body.ratio` | `request.aspectRatio` |
-| `tsai-seedance-mini.create.body.resolution` | `request.resolution` 转小写 |
+| `tsai-seedance-mini.create.body.resolution` | `request.resolution` |
 | `tsai-seedance-mini.create.body.generate_audio` | `request.generateAudio` |
+| `tsai-seedance-mini.create.body.seed` | `request.extra.seed` |
 | `tsai-seedance-mini.poll.path` | `"/v1/videos/{{taskId}}"` |
 | `tsai-seedream.create.path` | `"/v1/images/generations"` |
 | `tsai-seedream.create.body.size` | `2K`/`4K` 或由比例映射的像素尺寸 |
@@ -120,12 +126,12 @@
 
 ```json
 {
-  "apiVersion": "yingce.plugin/v2",
+  "apiVersion": "yingce.plugin/v1",
   "id": "tsai",
   "name": "TSAI 网关",
-  "version": "1.0.0",
+  "version": "1.1.3",
   "author": "TSAI / 影策",
-  "description": "TSAI 对话、MiniMax H3 / Seedance 2.0 mini 视频与 Seedream 4.5 图片协议，可导入为系统协议插件。",
+  "description": "随应用自动注册的 TSAI 对话、MiniMax H3、Seedance 2.0 / 2.0 mini 视频与 Seedream 4.5 图片官方系统协议。",
   "enabled": true,
   "installable": true,
   "permissions": [
@@ -433,7 +439,7 @@
             "type": "integer",
             "required": false,
             "mapping": "duration",
-            "description": "时长秒数，默认能力范围 4–15。"
+            "description": "时长秒数，默认 5，支持 4–15 秒。"
           },
           {
             "name": "aspectRatio",
@@ -447,7 +453,7 @@
             "type": "string",
             "required": false,
             "mapping": "resolution",
-            "description": "分辨率档位。"
+            "description": "分辨率档位；默认 2K，也支持 768P、480P 和 1080P。"
           },
           {
             "name": "generateAudio",
@@ -457,11 +463,25 @@
             "description": "是否同时生成音频。"
           },
           {
-            "name": "watermark",
-            "type": "boolean",
+            "name": "numOutputsPerPrompt",
+            "type": "integer",
             "required": false,
-            "mapping": "watermark",
-            "description": "水印开关。"
+            "mapping": "num_outputs_per_prompt",
+            "description": "单次输出数量。"
+          },
+          {
+            "name": "cameraMotion",
+            "type": "string",
+            "required": false,
+            "mapping": "camera_motion",
+            "description": "平台统一运镜提示。"
+          },
+          {
+            "name": "seed",
+            "type": "integer",
+            "required": false,
+            "mapping": "seed",
+            "description": "固定随机种子。"
           },
           {
             "name": "providerOptions",
@@ -859,9 +879,26 @@
                     }
                   }
                 },
-                "watermark": {
+                "num_outputs_per_prompt": {
                   "$omitEmpty": {
-                    "$ref": "request.watermark"
+                    "$coalesce": [
+                      {
+                        "$ref": "request.output.count"
+                      },
+                      {
+                        "$ref": "request.imageCount"
+                      }
+                    ]
+                  }
+                },
+                "camera_motion": {
+                  "$omitEmpty": {
+                    "$ref": "request.extra.camera_motion"
+                  }
+                },
+                "seed": {
+                  "$omitEmpty": {
+                    "$ref": "request.extra.seed"
                   }
                 }
               },
@@ -956,7 +993,7 @@
       },
       {
         "id": "tsai-seedance-mini",
-        "label": "TSAI Seedance 2.0 mini 视频",
+        "label": "TSAI Seedance 2.0 / 2.0 mini 视频",
         "capabilities": [
           "video"
         ],
@@ -992,21 +1029,21 @@
             "name": "images",
             "type": "media[]",
             "required": false,
-            "mapping": "content[].image_url",
-            "description": "按 role 拆到参考图、首帧和尾帧。"
+            "mapping": "conditions[].uri",
+            "description": "按条件类型和 role 映射参考图、首帧与尾帧。"
           },
           {
             "name": "videos",
             "type": "media[]",
             "required": false,
-            "mapping": "reference_video",
+            "mapping": "conditions[].uri",
             "description": "参考视频。"
           },
           {
             "name": "audios",
             "type": "media[]",
             "required": false,
-            "mapping": "reference_audio",
+            "mapping": "conditions[].uri",
             "description": "参考音频。"
           },
           {
@@ -1014,7 +1051,7 @@
             "type": "integer",
             "required": false,
             "mapping": "duration",
-            "description": "时长秒数，默认能力范围 4–15。"
+            "description": "时长秒数；具体支持规格以当前 Seedance 公开模型和渠道为准。"
           },
           {
             "name": "aspectRatio",
@@ -1028,7 +1065,7 @@
             "type": "string",
             "required": false,
             "mapping": "resolution",
-            "description": "分辨率档位。"
+            "description": "分辨率档位；具体支持规格以当前 Seedance 公开模型和渠道为准。"
           },
           {
             "name": "generateAudio",
@@ -1036,13 +1073,6 @@
             "required": false,
             "mapping": "generate_audio",
             "description": "是否同时生成音频。"
-          },
-          {
-            "name": "watermark",
-            "type": "boolean",
-            "required": false,
-            "mapping": "watermark",
-            "description": "水印开关。"
           },
           {
             "name": "providerOptions",
@@ -1066,7 +1096,7 @@
                 0
               ]
             },
-            "message": "TSAI Seedance 2.0 mini 需要填写 prompt"
+            "message": "TSAI Seedance 需要填写 prompt"
           },
           {
             "assert": {
@@ -1079,7 +1109,7 @@
                 20000
               ]
             },
-            "message": "TSAI Seedance 2.0 mini 的 prompt 最多 20000 个字符"
+            "message": "TSAI Seedance 的 prompt 最多 20000 个字符"
           },
           {
             "assert": {
@@ -1092,7 +1122,7 @@
                 9
               ]
             },
-            "message": "TSAI Seedance 2.0 mini 最多支持 9 张参考图片"
+            "message": "TSAI Seedance 最多支持 9 张参考图片"
           },
           {
             "assert": {
@@ -1105,7 +1135,7 @@
                 3
               ]
             },
-            "message": "TSAI Seedance 2.0 mini 最多支持 3 个参考视频"
+            "message": "TSAI Seedance 最多支持 3 个参考视频"
           },
           {
             "assert": {
@@ -1118,7 +1148,7 @@
                 3
               ]
             },
-            "message": "TSAI Seedance 2.0 mini 最多支持 3 个参考音频"
+            "message": "TSAI Seedance 最多支持 3 个参考音频"
           },
           {
             "assert": {
@@ -1240,7 +1270,7 @@
                 }
               ]
             },
-            "message": "TSAI Seedance 2.0 mini 的首尾帧不能与普通参考图、参考视频或参考音频混用"
+            "message": "TSAI Seedance 的首尾帧不能与普通参考图、参考视频或参考音频混用"
           }
         ],
         "create": {
@@ -1253,102 +1283,114 @@
                 "model": {
                   "$ref": "request.model"
                 },
-                "content": {
-                  "$concatArrays": [
-                    [
-                      {
-                        "type": "text",
-                        "text": {
-                          "$ref": "request.prompt"
-                        }
-                      }
-                    ],
-                    {
-                      "$map": {
-                        "from": {
-                          "$sortByOrder": {
-                            "$ref": "request.images"
-                          }
-                        },
-                        "as": "media",
-                        "in": {
-                          "type": "image_url",
-                          "image_url": {
-                            "url": {
-                              "$ref": "media.value"
-                            }
-                          },
-                          "role": {
-                            "$switch": {
-                              "cases": [
-                                {
-                                  "when": {
-                                    "$eq": [
-                                      {
-                                        "$ref": "media.role"
-                                      },
-                                      "first_frame"
-                                    ]
-                                  },
-                                  "then": "first_frame"
+                "prompt": {
+                  "$ref": "request.prompt"
+                },
+                "conditions": {
+                  "$omitEmpty": {
+                    "$map": {
+                      "from": {
+                        "$sortByOrder": {
+                          "$concatArrays": [
+                            {
+                              "$map": {
+                                "from": {
+                                  "$ref": "request.images"
                                 },
-                                {
-                                  "when": {
-                                    "$eq": [
-                                      {
-                                        "$ref": "media.role"
-                                      },
-                                      "last_frame"
-                                    ]
+                                "as": "media",
+                                "in": {
+                                  "kind": "image",
+                                  "value": {
+                                    "$ref": "media.value"
                                   },
-                                  "then": "last_frame"
+                                  "role": {
+                                    "$switch": {
+                                      "cases": [
+                                        {
+                                          "when": {
+                                            "$eq": [
+                                              {
+                                                "$ref": "media.role"
+                                              },
+                                              "first_frame"
+                                            ]
+                                          },
+                                          "then": "first_frame"
+                                        },
+                                        {
+                                          "when": {
+                                            "$eq": [
+                                              {
+                                                "$ref": "media.role"
+                                              },
+                                              "last_frame"
+                                            ]
+                                          },
+                                          "then": "last_frame"
+                                        }
+                                      ],
+                                      "default": "reference"
+                                    }
+                                  },
+                                  "order": {
+                                    "$ref": "media.order"
+                                  }
                                 }
-                              ],
-                              "default": "reference_image"
+                              }
+                            },
+                            {
+                              "$map": {
+                                "from": {
+                                  "$ref": "request.videos"
+                                },
+                                "as": "media",
+                                "in": {
+                                  "kind": "video",
+                                  "value": {
+                                    "$ref": "media.value"
+                                  },
+                                  "role": "reference",
+                                  "order": {
+                                    "$ref": "media.order"
+                                  }
+                                }
+                              }
+                            },
+                            {
+                              "$map": {
+                                "from": {
+                                  "$ref": "request.audios"
+                                },
+                                "as": "media",
+                                "in": {
+                                  "kind": "audio",
+                                  "value": {
+                                    "$ref": "media.value"
+                                  },
+                                  "role": "reference",
+                                  "order": {
+                                    "$ref": "media.order"
+                                  }
+                                }
+                              }
                             }
-                          }
+                          ]
                         }
-                      }
-                    },
-                    {
-                      "$map": {
-                        "from": {
-                          "$sortByOrder": {
-                            "$ref": "request.videos"
-                          }
+                      },
+                      "as": "condition",
+                      "in": {
+                        "type": {
+                          "$ref": "condition.kind"
                         },
-                        "as": "media",
-                        "in": {
-                          "type": "video_url",
-                          "video_url": {
-                            "url": {
-                              "$ref": "media.value"
-                            }
-                          },
-                          "role": "reference_video"
-                        }
-                      }
-                    },
-                    {
-                      "$map": {
-                        "from": {
-                          "$sortByOrder": {
-                            "$ref": "request.audios"
-                          }
+                        "uri": {
+                          "$ref": "condition.value"
                         },
-                        "as": "media",
-                        "in": {
-                          "type": "audio_url",
-                          "audio_url": {
-                            "url": {
-                              "$ref": "media.value"
-                            }
-                          },
-                          "role": "reference_audio"
+                        "role": {
+                          "$ref": "condition.role"
                         }
                       }
                     }
-                  ]
+                  }
                 },
                 "duration": {
                   "$omitEmpty": {
@@ -1362,9 +1404,7 @@
                 },
                 "resolution": {
                   "$omitEmpty": {
-                    "$lower": {
-                      "$ref": "request.resolution"
-                    }
+                    "$ref": "request.resolution"
                   }
                 },
                 "generate_audio": {
@@ -1372,12 +1412,11 @@
                     "$ref": "request.generateAudio"
                   }
                 },
-                "watermark": {
+                "seed": {
                   "$omitEmpty": {
-                    "$ref": "request.watermark"
+                    "$ref": "request.extra.seed"
                   }
-                },
-                "mode": "reference"
+                }
               },
               {
                 "$coalesce": [

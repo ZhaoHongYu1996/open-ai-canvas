@@ -84,6 +84,44 @@ func TestPluginViewIncludesDocumentationForEveryOfficialProtocol(t *testing.T) {
 	}
 }
 
+func TestUploadableTSAICopyInstallsBesideOfficialPackage(t *testing.T) {
+	packagePath := filepath.Join("..", "..", "..", "plugin-packages", "uploadable", "tsai-upload.yingce-plugin")
+	packageData, err := os.ReadFile(packagePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pkg, err := protocol.ParsePluginPackage(packageData)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pkg.Manifest.Metadata.ID == "tsai" {
+		t.Fatal("uploadable package must not reuse the built-in TSAI plugin ID")
+	}
+
+	center, err := newPluginRuntime(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	installed, err := center.install(packageData, filepath.Base(packagePath))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if installed.Manifest.ID != pkg.Manifest.Metadata.ID || installed.Source != PluginOriginUploaded || installed.Status != "enabled" {
+		t.Fatalf("installed uploadable TSAI plugin = %#v", installed)
+	}
+
+	officialPath := filepath.Join("..", "..", "..", "plugin-packages", "tsai.yingce-plugin")
+	officialPackage, err := os.ReadFile(officialPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = center.install(officialPackage, filepath.Base(officialPath))
+	var appErr *AppError
+	if !errors.As(err, &appErr) || appErr.Status != http.StatusConflict || !strings.Contains(appErr.Message, "不能通过上传覆盖") {
+		t.Fatalf("uploading the built-in TSAI package error = %v, want a visible conflict", err)
+	}
+}
+
 func TestPluginRuntimeRefreshesExistingOfficialPackageDocumentation(t *testing.T) {
 	packagePath := filepath.Join("..", "..", "..", "plugin-packages", "openai-images.yingce-plugin")
 	packageData, err := os.ReadFile(packagePath)
