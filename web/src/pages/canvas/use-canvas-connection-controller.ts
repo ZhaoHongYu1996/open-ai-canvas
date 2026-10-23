@@ -451,6 +451,7 @@ export function useCanvasConnectionController({
         const world = screenToCanvas(clientX, clientY);
         const scale = Math.max(viewportRef.current.k, 0.05);
         const handleRadius = CONNECTION_SNAP_RADIUS / scale;
+        const bodyNodeId = nodeAtPoint(clientX, clientY);
         let isNearNode = false;
         let bestNodeId: string | null = null;
         let bestHandleId: string | undefined;
@@ -461,6 +462,8 @@ export function useCanvasConnectionController({
             .filter((node) => !isHiddenBatchChild(node, nodesRef.current) && !isNodeHiddenByCollapsedFrame(node, nodesRef.current) && !isFrameNode(node))
             .reverse()
             .forEach((node) => {
+                if (bodyNodeId && bodyNodeId !== node.id) return;
+                if (bodyNodeId === node.id) isNearNode = true;
                 const scrollTop = scriptScrollTopById[node.id] || 0;
                 const targetHandleId = node.type === CanvasNodeType.Script ? storyboardHandleAtY(node, world.y, scrollTop) : node.type === CanvasNodeType.BatchTable ? batchReferenceHandleAtY(node, world.y, handleRadius) : undefined;
                 if ((node.type === CanvasNodeType.Script || node.type === CanvasNodeType.BatchTable) && !targetHandleId) return;
@@ -472,7 +475,7 @@ export function useCanvasConnectionController({
                 const dx = world.x - anchor.x;
                 const dy = world.y - anchor.y;
                 const inPortZone = dx * dx + dy * dy <= handleRadius * handleRadius;
-                if (!inPortZone && !pointInsideNode(node, world)) return;
+                if (!inPortZone && !pointInsideNode(node, world) && bodyNodeId !== node.id) return;
                 isNearNode = true;
                 const priority = inPortZone ? 0 : 1;
                 if (priority >= bestPriority) return;
@@ -501,6 +504,7 @@ export function useCanvasConnectionController({
         const world = screenToCanvas(clientX, clientY);
         const scale = Math.max(viewportRef.current.k, 0.05);
         const handleRadius = CONNECTION_SNAP_RADIUS / scale;
+        const bodyNodeId = nodeAtPoint(clientX, clientY);
         let isNearNode = false;
         let bestNodeId: string | null = null;
         let bestHandleId: string | undefined;
@@ -512,6 +516,8 @@ export function useCanvasConnectionController({
             .filter((node) => !isHiddenBatchChild(node, nodesRef.current) && !isNodeHiddenByCollapsedFrame(node, nodesRef.current) && !isFrameNode(node))
             .reverse()
             .forEach((node) => {
+                if (bodyNodeId && bodyNodeId !== node.id) return;
+                if (bodyNodeId === node.id) isNearNode = true;
                 const scrollTop = scriptScrollTopById[node.id] || 0;
                 const targetHandleId = node.type === CanvasNodeType.Script ? storyboardHandleAtY(node, world.y, scrollTop) : node.type === CanvasNodeType.BatchTable ? batchReferenceHandleAtY(node, world.y, handleRadius) : undefined;
                 if ((node.type === CanvasNodeType.Script || node.type === CanvasNodeType.BatchTable) && !targetHandleId) return;
@@ -520,7 +526,7 @@ export function useCanvasConnectionController({
                 const dx = world.x - anchor.x;
                 const dy = world.y - anchor.y;
                 const inPortZone = dx * dx + dy * dy <= handleRadius * handleRadius;
-                if (!inPortZone && !pointInsideNode(node, world)) return;
+                if (!inPortZone && !pointInsideNode(node, world) && bodyNodeId !== node.id) return;
                 isNearNode = true;
                 const priority = inPortZone ? 0 : 1;
                 if (priority >= bestPriority) return;
@@ -884,4 +890,8 @@ function batchCellAtPoint(clientX: number, clientY: number) {
     const rowId = element?.dataset.rowId;
     const columnId = element?.dataset.columnId;
     return tableId && rowId && columnId ? { tableId, rowId, columnId } : undefined;
+}
+
+function nodeAtPoint(clientX: number, clientY: number) {
+    return document.elementFromPoint(clientX, clientY)?.closest<HTMLElement>(".node-element[data-node-id]")?.dataset.nodeId || null;
 }

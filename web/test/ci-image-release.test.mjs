@@ -24,7 +24,7 @@ function fixture(overrides = {}) {
     writeFileSync(path.join(bin, "docker"), '#!/bin/sh\nif [ "$3" = inspect ]; then\n  if [ -n "$MOCK_ERROR" ]; then printf "%s\\n" "$MOCK_ERROR" >&2; exit 1; fi\n  printf "%s\\n" "$MOCK_DIGEST"\nelse\n  printf "%s\\n" "$@" > "$MOCK_CALL"\nfi\n', {
         mode: 0o755,
     });
-    writeFileSync(path.join(bin, "gh"), '#!/bin/sh\nif [ -n "$MOCK_GH_ERROR" ]; then exit 1; fi\nprintf "%s\\n" "$MOCK_MAIN"\n', { mode: 0o755 });
+    writeFileSync(path.join(bin, "gh"), '#!/bin/sh\nif [ -n "$MOCK_GH_ERROR" ]; then exit 1; fi\nprintf "%s\\n" "${MOCK_REF_SHA:-$MOCK_MAIN}"\n', { mode: 0o755 });
     const output = path.join(root, "output");
     writeFileSync(output, "");
     const env = {
@@ -42,6 +42,7 @@ function fixture(overrides = {}) {
         MOCK_ERROR: "",
         MOCK_GH_ERROR: "",
         MOCK_MAIN: sha,
+        MOCK_REF_SHA: "",
         MOCK_CALL: path.join(root, "docker-call"),
         ...overrides,
     };
@@ -90,8 +91,14 @@ describe("digest promotion", () => {
         expect(repo.run("promote-image.sh").status).toBe(0);
         expect(repo.call()).not.toContain(":latest");
     });
-    test("tag release promotes the exact version without touching latest", () => {
+    test("current Dev version tag promotes the exact version and latest", () => {
         const repo = fixture({ GITHUB_REF: "refs/tags/v1.5.5" });
+        expect(repo.run("promote-image.sh").status).toBe(0);
+        expect(repo.call()).toContain("ghcr.io/fixture/image:1.5.5");
+        expect(repo.call()).toContain("ghcr.io/fixture/image:latest");
+    });
+    test("stale Dev version tag cannot roll latest back", () => {
+        const repo = fixture({ GITHUB_REF: "refs/tags/v1.5.5", MOCK_REF_SHA: "c".repeat(40) });
         expect(repo.run("promote-image.sh").status).toBe(0);
         expect(repo.call()).toContain("ghcr.io/fixture/image:1.5.5");
         expect(repo.call()).not.toContain(":latest");
