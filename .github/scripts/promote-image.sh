@@ -17,6 +17,13 @@ tags=(--tag "$IMAGE:sha-$GITHUB_SHA" --tag "$IMAGE:sha-${GITHUB_SHA:0:7}")
 if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
   [[ "${VERSION_TAG:?}" =~ ^[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?([.-][0-9A-Za-z.-]+)?$ ]] || { echo "Invalid version image tag" >&2; exit 1; }
   tags+=(--tag "$IMAGE:$VERSION_TAG")
+  current_sha=$(gh api "repos/${GITHUB_REPOSITORY:?}/git/ref/heads/Dev" --jq '.object.sha')
+  [[ "$current_sha" =~ ^[0-9a-f]{40}$ ]] || { echo "Invalid Dev branch SHA" >&2; exit 1; }
+  if [[ "$current_sha" == "$GITHUB_SHA" ]]; then
+    tags+=(--tag "$IMAGE:latest")
+  else
+    echo 'This version tag is not the current Dev commit; leaving latest unchanged.'
+  fi
 elif [[ "$GITHUB_REF" == refs/heads/main ]]; then
   current_sha=$(gh api "repos/${GITHUB_REPOSITORY:?}/git/ref/heads/main" --jq '.object.sha')
   [[ "$current_sha" =~ ^[0-9a-f]{40}$ ]] || { echo "Invalid main branch SHA" >&2; exit 1; }
