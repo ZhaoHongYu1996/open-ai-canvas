@@ -1,6 +1,7 @@
 package skills
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -17,7 +18,7 @@ import (
 )
 
 const yingshiSkillID = "yingshi-drama-workshop"
-const yingshiPythonTreeSHA256 = "a4db22db439c9a0f1d82f33169e00c2124f69c2323332744f6a59c15d10d006d"
+const yingshiPythonTreeSHA256 = "731838b084b3efbfda806378e5a6a2a83a0bf2040f8c627c29b88d32c904ff88"
 
 var pythonScriptCommand = regexp.MustCompile("(?i)^\\s*(?:\\$\\s*)?(?:python(?:3(?:\\.\\d+)?)?|py(?:\\s+-3(?:\\.\\d+)?)?)\\s+[^`\\n]*(?:\\.py\\b|-m\\s+wfkit)")
 var machineSpecificPath = regexp.MustCompile(`(?i)(?:[a-z]:\\|\\\\[^\\]+\\|/(?:Users|home|private/Users)/|~/)`)
@@ -68,7 +69,8 @@ func TestYingshiBuiltinBundleCompatibility(t *testing.T) {
 		if !strings.HasSuffix(path, "/__init__.py") {
 			executableCount++
 		}
-		fileHash := sha256.Sum256(target.archive.Files[path])
+		// Git may check these embedded scripts out with CRLF on Windows.
+		fileHash := sha256.Sum256(bytes.ReplaceAll(target.archive.Files[path], []byte("\r\n"), []byte("\n")))
 		_, _ = fmt.Fprintf(digest, "%s\t%s\n", path, hex.EncodeToString(fileHash[:]))
 	}
 	if executableCount != 31 {
