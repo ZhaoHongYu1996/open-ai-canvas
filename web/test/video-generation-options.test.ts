@@ -5,8 +5,8 @@ import { formatVideoResolutionLabel, normalizeVideoResolution, videoDimensionsFo
 
 describe("video generation resolution options", () => {
     test("统一档位包含 1440P 与 4K，并识别常见别名", () => {
-        expect(VIDEO_RESOLUTION_OPTIONS).toEqual([480, 720, 1080, 1440, 2160]);
-        expect(VIDEO_RESOLUTION_CAPABILITY_OPTIONS).toEqual(["480p", "720p", "1080p", "1440p", "2160p"]);
+        expect(VIDEO_RESOLUTION_OPTIONS).toEqual([480, 720, 768, 1080, 1440, 2160]);
+        expect(VIDEO_RESOLUTION_CAPABILITY_OPTIONS).toEqual(["480p", "720p", "768p", "1080p", "1440p", "2160p"]);
         expect(normalizeVideoResolution("2k")).toBe("1440");
         expect(normalizeVideoResolution("1440p")).toBe("1440");
         expect(normalizeVideoResolution("4K")).toBe("2160");
