@@ -172,8 +172,8 @@ export function MentionMenu({
                 )}
             </div>
         </div>,
-        // Keep the popup inside the dialog's focus and pointer-event boundary.
-        anchor.closest(".ant-modal") || document.body,
+        // Keep the search input inside the modal focus trap while remaining a fixed overlay.
+        anchor.closest(".ant-modal-container") || document.body,
     );
 }
 

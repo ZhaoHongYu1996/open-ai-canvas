@@ -15,12 +15,17 @@ afterAll(() => dom.happyDOM.abort());
 for (const inModal of [true, false]) {
     test(inModal ? "放大弹窗保留焦点边界、搜索和资产点击" : "普通编辑仍使用 body Portal", async () => {
         const host = document.createElement("div");
-        const container = document.createElement("div");
-        container.className = inModal ? "ant-modal" : "inline-editor";
+        const modal = document.createElement("div");
+        modal.className = inModal ? "ant-modal" : "inline-editor";
+        const container = inModal ? document.createElement("div") : modal;
+        if (inModal) {
+            container.className = "ant-modal-container";
+            modal.append(container);
+        }
         container.style.pointerEvents = "none";
         const anchor = document.createElement("textarea");
         container.append(anchor);
-        document.body.append(host, container);
+        document.body.append(host, modal);
         const root = createRoot(host);
         const reference: CanvasResourceReference = { id: "asset-1", nodeId: "asset-1", kind: "image", label: "图片1", title: "角色参考", active: true };
         const selected: string[] = [];
@@ -43,7 +48,7 @@ for (const inModal of [true, false]) {
             expect(selected).toEqual(["asset-1"]);
         } finally {
             await act(async () => root.unmount());
-            container.remove();
+            modal.remove();
             host.remove();
         }
     });
