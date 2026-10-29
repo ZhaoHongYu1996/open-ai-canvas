@@ -1,6 +1,7 @@
 import { createClientUUID } from "@/lib/client-id";
-import { App, Button, Input, InputNumber, Modal, Progress, Segmented, Select, Spin, Switch, Tooltip } from "antd";
-import { Check, Camera, ChevronDown, ChevronUp, Clapperboard, Expand, FileImage, History, ImagePlus, Images, LoaderCircle, Mic, Palette, Plus, RotateCcw, Search, ShoppingBag, Sparkles, Upload, UserRound, Video, X } from "lucide-react";
+import { App, Button, Input, InputNumber, Modal, Progress, Segmented, Select, Spin, Switch } from "antd";
+import { AntTooltip as Tooltip } from "@/components/ui/base/tooltip/ant-tooltip";
+import { Check, Camera, ChevronDown, ChevronUp, Clapperboard, Expand, FileImage, History, ImagePlus, Images, LoaderCircle, Mic, Palette, Plus, RotateCcw, Search, ShoppingBag, Upload, UserRound, Video, X, ArrowUp } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 
@@ -153,7 +154,7 @@ function toolVisual(tool: WorkbenchTool, kind: WorkbenchKind) {
     if (text.includes("场景") || text.includes("氛围") || text.includes("背景")) return { icon: <Images />, tone: "scene", label: "场景与氛围" };
     if (text.includes("风格") || text.includes("海报") || text.includes("视觉")) return { icon: <Palette />, tone: "style", label: "风格与视觉" };
     if (text.includes("主图") || text.includes("商品") || text.includes("电商") || text.includes("白底")) return { icon: <ShoppingBag />, tone: "product", label: "商品出品" };
-    return { icon: kind === "image" ? <Camera /> : <Sparkles />, tone: "creative", label: "创意生成" };
+    return { icon: kind === "image" ? <Camera /> : <Clapperboard />, tone: "creative", label: "创意生成" };
 }
 
 function flowStepState(step: string, values: { tool: WorkbenchTool | null; references: WorkbenchReference[]; prompt: string; selectedModel: string }) {
@@ -273,7 +274,12 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
         const toolId = searchParams.get("tool");
         if (!toolId || !tools.length) return;
         const next = tools.find((item) => item.id === toolId);
-        if (next) setTool(next);
+        // 页内选择和任务恢复会先更新 tool 再改地址，这里只处理从外部链接切换过来的工具。
+        if (!next || next.id === tool?.id) return;
+        setTool(next);
+        switchToolPrompt(next, searchParams.get("preset"));
+        // 只随地址和目录变化触发；tool 变化不能触发，否则任务恢复在改地址前会被旧地址拉回。
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [searchParams, tools]);
 
     useEffect(() => {
@@ -464,32 +470,45 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
         message.success("工作台已重置");
     };
 
+    // 提示词为空，或仍是当前预设的原文（用户没改过），切换时可以直接替换；改过的内容先确认再动。
+    const promptReplaceable = () => !prompt.trim() || (preset !== null && prompt.trim() === preset.promptTemplate.trim());
+
+    // 切换工具后提示词必须跟着新工具走：未改动的模板直接换成新工具的预设（新工具没有预设则清空），
+    // 用户改过的内容弹出"替换 / 追加 / 返回"确认，不能静默保留上一个工具的模板。
+    const switchToolPrompt = (next: WorkbenchTool | null, preferredPresetId?: string | null) => {
+        const replaceable = promptReplaceable();
+        const nextPreset = next?.presets.find((item) => item.id === preferredPresetId) || next?.presets[0] || null;
+        setPresetPending(null);
+        if (!nextPreset) {
+            setPreset(null);
+            if (replaceable) setPrompt("");
+            return;
+        }
+        if (replaceable) {
+            setPrompt(nextPreset.promptTemplate);
+            setPreset(nextPreset);
+            return;
+        }
+        setPreset(null);
+        setPresetPending(nextPreset);
+    };
+
     const chooseTool = (next: WorkbenchTool | null) => {
         references.forEach(revokeReferencePreview);
         setReferences([]);
         setUploadSlotKey(undefined);
         setTool(next);
         setToolLibraryOpen(false);
-        setPreset(null);
-        setPresetPending(null);
         const params = new URLSearchParams(searchParams);
         if (next) params.set("tool", next.id);
         else params.delete("tool");
         params.delete("preset");
         setSearchParams(params, { replace: true });
-        // 工具选择必须真实作用于提示词：有预设模板且当前提示词为空时直接填充首个预设，
-        // 否则展示预设 chips 让用户主动应用，避免"选了工具没反应"。
-        if (next?.presets.length) {
-            const first = next.presets[0];
-            if (!prompt.trim()) {
-                setPrompt(first.promptTemplate);
-                setPreset(first);
-            }
-        }
+        switchToolPrompt(next);
     };
 
     const choosePreset = (next: WorkbenchPromptPreset) => {
-        if (!prompt.trim()) {
+        if (promptReplaceable()) {
             setPrompt(next.promptTemplate);
             setPreset(next);
             return;
@@ -1267,7 +1286,7 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
                                     disabled={(promptRequired && !prompt.trim()) || Boolean(missingInput) || !selectedModel || references.some((reference) => reference.uploading || Boolean(reference.error))}
                                     onClick={() => void submit()}
                                 >
-                                    <Sparkles />
+                                    <ArrowUp />
                                     <span>{kind === "image" ? "生成图片" : "生成视频"}</span>
                                 </Button>
                             </div>
