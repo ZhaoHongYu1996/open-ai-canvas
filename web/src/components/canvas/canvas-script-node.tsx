@@ -608,27 +608,33 @@ export function CanvasScriptEditor({
 
     return (
         <Modal title={node?.title || "分镜脚本"} open={open} onCancel={onClose} footer={null} width="min(1480px, calc(100vw - 40px))" centered destroyOnHidden>
-            <div className="mb-3 flex flex-wrap items-center gap-2">
-                <Input.Search className="w-72" allowClear placeholder="筛选画面、台词或提示词" value={query} onChange={(event) => setQuery(event.target.value)} />
-                    <CheckboxGroup className="script-column-picker" options={columnOptions} value={visibleColumns} onChange={(values) => onVisibleColumnsChange(values)} />
-                <span className="min-w-0 flex-1" />
-                <Button icon={<Plus className="size-4" />} onClick={() => onUpdateRows([...rows, editorRow(rows.length + 1)])}>
-                    新增镜头
-                </Button>
-                <Button icon={<ImageIcon className="size-4" />} disabled={!selectedIds.length} onClick={() => onGenerateImages(selectedIds)}>
-                    生成{videoInputMode === "keyframe" ? "首帧" : "分镜图"}
-                </Button>
-                <Segmented<StoryboardVideoInputMode>
-                    value={videoInputMode}
-                    options={[
-                        { value: "direct", label: "直接生成" },
-                        { value: "keyframe", label: "先做首帧" },
-                    ]}
-                    onChange={onVideoInputModeChange}
-                />
-                <Button type="primary" icon={<Film className="size-4" />} disabled={!selectedIds.length} onClick={() => onGenerateVideos(selectedIds)}>
-                    {videoInputMode === "keyframe" ? "确认首帧并生成" : "生成视频"}
-                </Button>
+            <div className="mb-3 flex flex-col gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                    <Input.Search className="w-72" allowClear placeholder="筛选画面、台词或提示词" value={query} onChange={(event) => setQuery(event.target.value)} />
+                    <span className="min-w-0 flex-1" />
+                    <Button icon={<Plus className="size-4" />} onClick={() => onUpdateRows([...rows, editorRow(rows.length + 1)])}>
+                        新增镜头
+                    </Button>
+                    <Button icon={<ImageIcon className="size-4" />} disabled={!selectedIds.length} onClick={() => onGenerateImages(selectedIds)}>
+                        生成{videoInputMode === "keyframe" ? "首帧" : "分镜图"}
+                    </Button>
+                    <Segmented<StoryboardVideoInputMode>
+                        value={videoInputMode}
+                        options={[
+                            { value: "direct", label: "直接生成" },
+                            { value: "keyframe", label: "先做首帧" },
+                        ]}
+                        onChange={onVideoInputModeChange}
+                    />
+                    <Button type="primary" icon={<Film className="size-4" />} disabled={!selectedIds.length} onClick={() => onGenerateVideos(selectedIds)}>
+                        {videoInputMode === "keyframe" ? "确认首帧并生成" : "生成视频"}
+                    </Button>
+                </div>
+                {/* 列开关独占一行并换行排布；否则 16 个选项会和上一行控件挤在同一基线。 */}
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-md border border-border/60 px-2.5 py-1.5">
+                    <span className="shrink-0 text-[var(--fs-tiny)] font-medium text-foreground/45">显示列</span>
+                    <CheckboxGroup className="script-column-picker flex min-w-0 flex-1 flex-wrap items-center gap-x-4 gap-y-1.5" options={columnOptions} value={visibleColumns} onChange={(values) => onVisibleColumnsChange(values)} />
+                </div>
             </div>
             <Table<StoryboardRow>
                 rowKey="id"
