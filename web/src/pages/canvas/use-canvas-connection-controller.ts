@@ -7,15 +7,13 @@ import { latchCanvasConnectionApproach, type CanvasConnectionApproach } from "@/
 import type { PendingConnectionCreate } from "@/components/canvas/canvas-workspace-overlays";
 import { getNodeSpec } from "@/constant/canvas";
 import { batchCellSourcesError, batchConnectionRejectReason, batchSourceRestriction, buildBatchConnectionCreateRequest, hasBatchConnectionCandidate, planBatchConnections, type CanvasBatchConnectionPreview } from "@/lib/canvas/canvas-batch-connection";
-import { batchReferenceHandleAtY } from "@/lib/canvas/canvas-batch-table";
 import { batchCellConnectionError, batchCellHandle, parseBatchCellHandle, type BatchScroll } from "@/lib/canvas/canvas-batch-references";
 import { connectedNodeCenterFromEdgeDrop } from "@/lib/canvas/canvas-connected-node-placement";
 import { canvasConnectionError, connectionInputSummary } from "@/lib/canvas/canvas-connection-policy";
-import type { CanvasConnectionDropTarget as ConnectionDropTarget } from "@/lib/canvas/canvas-connection-hit";
+import { resolveCanvasConnectionTarget, type CanvasConnectionDropTarget as ConnectionDropTarget } from "@/lib/canvas/canvas-connection-hit";
 import { CANVAS_WHEEL_POPUP_SELECTOR } from "@/lib/canvas/canvas-wheel-intent";
 import { audioModelForConnectionInput } from "@/lib/model-selection";
-import { attachNodeToStoryboardRow, createCanvasNode, getConnectionTargetAnchor, isHiddenBatchChild, normalizeConnection, storyboardHandleAtY, storyboardPromptTemplateMetadata, storyboardRowFromHandle, storyboardRowVideoPrompt } from "@/lib/canvas/canvas-project-domain";
-import { isFrameNode, isNodeHiddenByCollapsedFrame } from "@/lib/canvas/canvas-frame";
+import { attachNodeToStoryboardRow, createCanvasNode, normalizeConnection, storyboardPromptTemplateMetadata, storyboardRowFromHandle, storyboardRowVideoPrompt } from "@/lib/canvas/canvas-project-domain";
 import { canvasImageNodeDimensions } from "@/lib/canvas/canvas-reference-image-size";
 import { imageNodeSizeFromRatio } from "@/lib/canvas/canvas-node-size";
 import { createCanvasDrawingFromImage } from "@/lib/canvas/canvas-drawing-storage";
@@ -63,11 +61,6 @@ const CONNECTION_SNAP_RADIUS = 56;
 // 松手后没有 click 到来时（指针移出窗口、触摸的 click 来得晚）守卫最多保留这么久。
 const BATCH_PRESS_GUARD_MS = 500;
 const NODE_STATUS_IDLE = "idle" as const;
-
-/** 节点矩形本身也是接入区；端口圆区仍优先，避免整块命中不稳定。 */
-function pointInsideNode(node: CanvasNodeData, point: Position) {
-    return point.x >= node.position.x && point.x <= node.position.x + node.width && point.y >= node.position.y && point.y <= node.position.y + node.height;
-}
 
 function selectRunningHubWorkflow(config: AiConfig) {
     const capability = normalizeRunningHubCapability(config.runningHub.capability);
@@ -472,45 +465,19 @@ export function useCanvasConnectionController({
             const error = batchCellConnectionError(nodesRef.current, current.nodeId, cell.tableId, handleId);
             return { nodeId: error ? null : cell.tableId, handleId, isNearNode: true };
         }
-        const world = screenToCanvas(clientX, clientY);
-        const scale = Math.max(viewportRef.current.k, 0.05);
-        const handleRadius = CONNECTION_SNAP_RADIUS / scale;
-        const bodyNodeId = nodeAtPoint(clientX, clientY);
-        let isNearNode = false;
-        let bestNodeId: string | null = null;
-        let bestHandleId: string | undefined;
-        let bestAnchorRatio: number | undefined;
-        let bestPriority = Number.POSITIVE_INFINITY;
-
-        [...nodesRef.current]
-            .filter((node) => !isHiddenBatchChild(node, nodesRef.current) && !isNodeHiddenByCollapsedFrame(node, nodesRef.current) && !isFrameNode(node))
-            .reverse()
-            .forEach((node) => {
-                if (bodyNodeId && bodyNodeId !== node.id) return;
-                if (bodyNodeId === node.id) isNearNode = true;
-                const scrollTop = scriptScrollTopById[node.id] || 0;
-                const targetHandleId = node.type === CanvasNodeType.Script ? storyboardHandleAtY(node, world.y, scrollTop) : node.type === CanvasNodeType.BatchTable ? batchReferenceHandleAtY(node, world.y, handleRadius) : undefined;
-                if ((node.type === CanvasNodeType.Script || node.type === CanvasNodeType.BatchTable) && !targetHandleId) return;
-                // 端口圆区仍是最高优先级命中；节点整个矩形也作为接入区，
-                // 不再要求把指针精确对准端口或 + 号。
-                // Only storyboard rows have a meaningful vertical target position.
-                const targetAnchorRatio = undefined;
-                const anchor = getConnectionTargetAnchor(node, current, targetHandleId, scrollTop, batchScrollById?.[node.id]);
-                const dx = world.x - anchor.x;
-                const dy = world.y - anchor.y;
-                const inPortZone = dx * dx + dy * dy <= handleRadius * handleRadius;
-                if (!inPortZone && !pointInsideNode(node, world) && bodyNodeId !== node.id) return;
-                isNearNode = true;
-                const priority = inPortZone ? 0 : 1;
-                if (priority >= bestPriority) return;
+        return resolveCanvasConnectionTarget({
+            nodes: nodesRef.current,
+            current,
+            point: screenToCanvas(clientX, clientY),
+            radius: CONNECTION_SNAP_RADIUS / Math.max(viewportRef.current.k, 0.05),
+            bodyNodeId: nodeAtPoint(clientX, clientY),
+            scriptScrollTopById,
+            batchScrollById,
+            canConnect: (node) => {
                 const normalized = node.id === current.nodeId ? null : normalizeConnection(current.nodeId, node.id, nodesRef.current, current.handleType);
-                if (!normalized || canvasConnectionError(config, nodesRef.current, connectionsRef.current, normalized)) return;
-                bestNodeId = node.id;
-                bestHandleId = targetHandleId;
-                bestAnchorRatio = targetAnchorRatio;
-                bestPriority = priority;
-            });
-        return { nodeId: bestNodeId, handleId: bestHandleId, anchorRatio: bestAnchorRatio, isNearNode };
+                return Boolean(normalized && !canvasConnectionError(config, nodesRef.current, connectionsRef.current, normalized));
+            },
+        });
     }, [batchScrollById, config, connectionsRef, nodesRef, screenToCanvas, scriptScrollTopById, viewportRef]);
 
     const getBatchConnectionDropTarget = useCallback((clientX: number, clientY: number, sourceNodeIds: string[]): BatchConnectionDropTarget => {
@@ -527,42 +494,17 @@ export function useCanvasConnectionController({
             .find((node): node is CanvasNodeData => Boolean(node && !batchSourceRestriction(node)));
         if (!source) return { nodeId: null, isNearNode: false };
 
-        const world = screenToCanvas(clientX, clientY);
-        const scale = Math.max(viewportRef.current.k, 0.05);
-        const handleRadius = CONNECTION_SNAP_RADIUS / scale;
-        const bodyNodeId = nodeAtPoint(clientX, clientY);
-        let isNearNode = false;
-        let bestNodeId: string | null = null;
-        let bestHandleId: string | undefined;
-        let bestAnchorRatio: number | undefined;
-        let bestPriority = Number.POSITIVE_INFINITY;
         const current: ConnectionHandle = { nodeId: source.id, handleType: "source" };
-
-        [...nodesRef.current]
-            .filter((node) => !isHiddenBatchChild(node, nodesRef.current) && !isNodeHiddenByCollapsedFrame(node, nodesRef.current) && !isFrameNode(node))
-            .reverse()
-            .forEach((node) => {
-                if (bodyNodeId && bodyNodeId !== node.id) return;
-                if (bodyNodeId === node.id) isNearNode = true;
-                const scrollTop = scriptScrollTopById[node.id] || 0;
-                const targetHandleId = node.type === CanvasNodeType.Script ? storyboardHandleAtY(node, world.y, scrollTop) : node.type === CanvasNodeType.BatchTable ? batchReferenceHandleAtY(node, world.y, handleRadius) : undefined;
-                if ((node.type === CanvasNodeType.Script || node.type === CanvasNodeType.BatchTable) && !targetHandleId) return;
-                const targetAnchorRatio = undefined;
-                const anchor = getConnectionTargetAnchor(node, current, targetHandleId, scrollTop, batchScrollById?.[node.id]);
-                const dx = world.x - anchor.x;
-                const dy = world.y - anchor.y;
-                const inPortZone = dx * dx + dy * dy <= handleRadius * handleRadius;
-                if (!inPortZone && !pointInsideNode(node, world) && bodyNodeId !== node.id) return;
-                isNearNode = true;
-                const priority = inPortZone ? 0 : 1;
-                if (priority >= bestPriority) return;
-                if (!hasBatchConnectionCandidate(sourceNodeIds, node.id, nodesRef.current)) return;
-                bestNodeId = node.id;
-                bestHandleId = targetHandleId;
-                bestAnchorRatio = targetAnchorRatio;
-                bestPriority = priority;
-            });
-        return { nodeId: bestNodeId, handleId: bestHandleId, anchorRatio: bestAnchorRatio, isNearNode };
+        return resolveCanvasConnectionTarget({
+            nodes: nodesRef.current,
+            current,
+            point: screenToCanvas(clientX, clientY),
+            radius: CONNECTION_SNAP_RADIUS / Math.max(viewportRef.current.k, 0.05),
+            bodyNodeId: nodeAtPoint(clientX, clientY),
+            scriptScrollTopById,
+            batchScrollById,
+            canConnect: (node) => hasBatchConnectionCandidate(sourceNodeIds, node.id, nodesRef.current),
+        });
     }, [batchScrollById, nodesRef, screenToCanvas, scriptScrollTopById, viewportRef]);
 
     const startBatchConnection = useCallback((event: ReactPointerEvent, sourceNodeIds: string[]) => {
