@@ -1,7 +1,18 @@
-import { expect, test } from "bun:test";
+import { afterAll, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server.node";
+import { Window } from "happy-dom";
 import { AgentChatMessage, rewriteAgentNodeLinks, type CloudAgentChatMessage } from "@/components/canvas/canvas-cloud-agent-chat-ui";
 import { canvasThemes } from "@/lib/canvas-theme";
+
+const dom = new Window({ url: "http://localhost/" });
+const originalWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
+Object.defineProperty(globalThis, "window", { configurable: true, writable: true, value: dom });
+
+afterAll(() => {
+    if (originalWindow) Object.defineProperty(globalThis, "window", originalWindow);
+    else Reflect.deleteProperty(globalThis, "window");
+    dom.happyDOM.abort();
+});
 
 const videoReference = {
     id: "video-1790385749473-q4157",
