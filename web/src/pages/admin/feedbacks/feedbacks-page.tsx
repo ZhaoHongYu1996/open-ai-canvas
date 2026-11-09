@@ -1,9 +1,11 @@
 import { useEffect, useState, useCallback } from "react";
-import { App, Button, Drawer, Input, Modal, Popconfirm, Select, Space, Table, Tag, Image as AntImage, Segmented } from "antd";
+import { App, Button, Input, Popconfirm, Select, Space, Table, Tag, Image as AntImage, Segmented } from "antd";
+import { AdminDrawer, AdminModal } from "@/pages/admin/ui/overlays";
 import type { ColumnsType } from "antd/es/table";
 import { AlertCircle, Archive, ArchiveRestore, Bug, CheckCircle2, Clock, FileText, Inbox, Lightbulb, MessageSquare, Paperclip, Play, RefreshCw, Search, Send, UserRound, Clock3 } from "lucide-react";
 
 import { getAdminFeedbacks, updateAdminFeedback, archiveAdminFeedback, type FeedbackItem, type FeedbackType, type FeedbackStatus, type FeedbackAttachment } from "@/services/api/feedback";
+import { adminResourceFileUrl } from "@/services/api/admin-storage";
 import { AdminPageFrame } from "../components/admin-shell";
 import { cn } from "@/lib/utils";
 
@@ -386,7 +388,7 @@ export default function AdminFeedbacksPage() {
             </div>
 
             {/* Detail & Reply Drawer */}
-            <Drawer
+            <AdminDrawer
                 open={drawerOpen}
                 onClose={() => setDrawerOpen(false)}
                 width={560}
@@ -437,23 +439,27 @@ export default function AdminFeedbacksPage() {
                             <div>
                                 <label className="block text-xs font-semibold text-foreground mb-2">附件清单 ({selectedAttachments.length})</label>
                                 <div className="grid grid-cols-2 gap-2">
-                                    {selectedAttachments.map((att) => (
-                                        <div key={att.id} className="flex items-center gap-2 rounded-lg border border-border/60 bg-muted/25 p-2">
-                                            {att.type === "image" ? (
-                                                <AntImage src={att.url} alt={att.name} width={36} height={36} className="rounded object-cover" />
-                                            ) : (
-                                                <button type="button" onClick={() => setPreviewVideoUrl(att.url)} className="size-9 rounded bg-black/70 flex items-center justify-center text-primary hover:bg-black transition-colors">
-                                                    <Play className="size-4 fill-current ml-0.5" />
-                                                </button>
-                                            )}
-                                            <div className="min-w-0 flex-1">
-                                                <p className="truncate text-xs font-medium" title={att.name}>
-                                                    {att.name}
-                                                </p>
-                                                <p className="text-[var(--fs-label)] text-muted-foreground">{(att.size / (1024 * 1024)).toFixed(1)} MB</p>
+                                    {selectedAttachments.map((att) => {
+                                        // att.url 是提交者本人的 /api/resources/:id/file，管理员会被资源归属校验拒绝，后台改走管理员资源接口。
+                                        const fileUrl = adminResourceFileUrl(att.id);
+                                        return (
+                                            <div key={att.id} className="flex items-center gap-2 rounded-lg border border-border/60 bg-muted/25 p-2">
+                                                {att.type === "image" ? (
+                                                    <AntImage src={fileUrl} alt={att.name} width={36} height={36} className="rounded object-cover" />
+                                                ) : (
+                                                    <button type="button" onClick={() => setPreviewVideoUrl(fileUrl)} className="size-9 rounded bg-black/70 flex items-center justify-center text-primary hover:bg-black transition-colors">
+                                                        <Play className="size-4 fill-current ml-0.5" />
+                                                    </button>
+                                                )}
+                                                <div className="min-w-0 flex-1">
+                                                    <p className="truncate text-xs font-medium" title={att.name}>
+                                                        {att.name}
+                                                    </p>
+                                                    <p className="text-[var(--fs-label)] text-muted-foreground">{(att.size / (1024 * 1024)).toFixed(1)} MB</p>
+                                                </div>
                                             </div>
-                                        </div>
-                                    ))}
+                                        );
+                                    })}
                                 </div>
                             </div>
                         ) : null}
@@ -511,15 +517,15 @@ export default function AdminFeedbacksPage() {
                         </div>
                     </div>
                 ) : null}
-            </Drawer>
+            </AdminDrawer>
 
             {/* Video Preview Modal */}
             {previewVideoUrl ? (
-                <Modal open={Boolean(previewVideoUrl)} onCancel={() => setPreviewVideoUrl(null)} footer={null} width={720} destroyOnClose title="附件视频预览">
+                <AdminModal open={Boolean(previewVideoUrl)} onCancel={() => setPreviewVideoUrl(null)} footer={null} width={720} title="附件视频预览">
                     <div className="py-2">
                         <video src={previewVideoUrl} controls autoPlay className="w-full max-h-[60vh] rounded-lg bg-black" />
                     </div>
-                </Modal>
+                </AdminModal>
             ) : null}
         </AdminPageFrame>
     );

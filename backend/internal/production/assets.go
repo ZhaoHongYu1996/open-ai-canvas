@@ -101,8 +101,11 @@ type AssetSettings struct {
 	CharacterPrompt string `json:"characterPrompt"`
 	ScenePrompt     string `json:"scenePrompt"`
 	CharacterRatio  string `json:"characterRatio"`
-	// Resolution 是参考图分辨率档位（1k / 1.5k / 2k / 4k），空串按图片模型默认档位。
+	// Resolution / PropResolution / SceneResolution 是角色、道具、场景参考图的分辨率档位（1k / 1.5k / 2k / 4k），
+	// 空串按该类参考图所用图片模型的默认档位。
 	Resolution      string `json:"resolution,omitempty"`
+	PropResolution  string `json:"propResolution,omitempty"`
+	SceneResolution string `json:"sceneResolution,omitempty"`
 	SourceSkillID   string `json:"sourceSkillId,omitempty"`
 	SourceSkillName string `json:"sourceSkillName,omitempty"`
 	SourcePath      string `json:"sourcePath,omitempty"`
@@ -136,15 +139,32 @@ func (a AssetSettings) Normalized() AssetSettings {
 	if a.Mode != AssetModeCustom {
 		a.CharacterRatio = scheme.Ratio
 	}
-	switch a.Resolution = strings.ToLower(strings.TrimSpace(a.Resolution)); a.Resolution {
-	case "", "1k", "1.5k", "2k", "4k":
-	default:
-		a.Resolution = ""
-	}
+	a.Resolution = normalizedAssetTier(a.Resolution)
+	a.PropResolution = normalizedAssetTier(a.PropResolution)
+	a.SceneResolution = normalizedAssetTier(a.SceneResolution)
 	a.SourceSkillID = truncateRunes(strings.TrimSpace(a.SourceSkillID), 64)
 	a.SourceSkillName = truncateRunes(strings.TrimSpace(a.SourceSkillName), 120)
 	a.SourcePath = truncateRunes(strings.TrimSpace(a.SourcePath), 240)
 	return a
+}
+
+func normalizedAssetTier(value string) string {
+	switch value = strings.ToLower(strings.TrimSpace(value)); value {
+	case "1k", "1.5k", "2k", "4k":
+		return value
+	}
+	return ""
+}
+
+// ResolutionFor 是某类参考图（character / prop / scene）的分辨率档位，空串按模型默认。
+func (a AssetSettings) ResolutionFor(kind string) string {
+	switch kind {
+	case "prop":
+		return a.PropResolution
+	case "scene":
+		return a.SceneResolution
+	}
+	return a.Resolution
 }
 
 // FrameHint 返回首帧提示词里对参考图版式的说明。
@@ -156,6 +176,59 @@ func (a AssetSettings) FrameHint() string {
 }
 
 var assetPlaceholderPattern = regexp.MustCompile(`\{\{[^{}]+\}\}`)
+
+// 作品的画风与画面规则写的是成片（视频）的画幅，竖屏作品常带“9:16 竖屏构图”；设定图有自己的画幅
+// （场景、道具固定 16:9，角色按方案）。这两段文字带进设定图提示词前先去掉画幅与横竖构图要求，
+// 再由 WithAssetRatio 写明设定图自己的画幅。角色、道具、场景设定和方案模板不经过这里，原样保留。
+//
+// 比例只认常见画幅写法，并要求两侧不是数字，“12:30 的暖光”这类时间不会被删。
+const frameRatioToken = `\b(?:9\s*[:：]\s*16|16\s*[:：]\s*9|3\s*[:：]\s*4|4\s*[:：]\s*3|1\s*[:：]\s*1|21\s*[:：]\s*9|9\s*[:：]\s*21|2\s*[:：]\s*3|3\s*[:：]\s*2|4\s*[:：]\s*5|5\s*[:：]\s*4)\b`
+
+var (
+	// “画幅 9:16”“画面比例为 9:16”“9:16 竖屏构图”“16:9画幅比例”
+	frameRatioDirective = regexp.MustCompile(`(?:(?:画幅|画面|比例|宽高比|尺寸)+\s*(?:为|是|采用|[:：])?\s*)?` + frameRatioToken + `(?:\s*(?:横屏|横版|竖屏|竖版|横向|竖向|横|竖))?(?:构图|画面|画幅|比例|拍摄|格式|视频)*`)
+	// “竖屏构图”“竖屏”“横版画面”“竖向构图”“竖构图”
+	frameOrientationDirective = regexp.MustCompile(`(?:横屏|横版|竖屏|竖版)(?:构图|画面|画幅|比例|拍摄|格式|视频)*|(?:横向|竖向|横|竖)(?:构图|画幅)+`)
+	frameSeparatorRun         = regexp.MustCompile(`[，,、；;。]+(?:\s*[，,、；;。]+)*`)
+)
+
+// StripFrameDirectives 去掉画风或画面规则里关于成片画幅、横竖构图的要求，其余描述保留。
+func StripFrameDirectives(text string) string {
+	text = frameRatioDirective.ReplaceAllString(text, "")
+	text = frameOrientationDirective.ReplaceAllString(text, "")
+	// 删除后相邻的标点合成一个，保留语气最重的那个。
+	text = frameSeparatorRun.ReplaceAllStringFunc(text, func(run string) string {
+		switch {
+		case strings.Contains(run, "。"):
+			return "。"
+		case strings.ContainsAny(run, "；;"):
+			return "；"
+		default:
+			return "，"
+		}
+	})
+	text = strings.TrimLeft(strings.TrimSpace(text), "，,、；;。")
+	return strings.TrimSpace(strings.TrimRight(text, "，,、；;"))
+}
+
+// WithAssetRatio 在设定图提示词末尾写明本张设定图的画幅，与尺寸参数一致。
+func WithAssetRatio(prompt, ratio string) string {
+	prompt = strings.TrimSpace(prompt)
+	ratio = strings.TrimSpace(ratio)
+	if ratio == "" {
+		return prompt
+	}
+	orientation := "，严格保持该宽高比"
+	switch ratio {
+	case "16:9", "4:3":
+		orientation = "，横版，宽度大于高度"
+	case "9:16", "3:4":
+		orientation = "，竖版，高度大于宽度"
+	case "1:1":
+		orientation = "，方图，宽度与高度相等"
+	}
+	return strings.TrimSpace(prompt + "\n最终输出画幅必须为 " + ratio + orientation + "；不得改成其他比例。")
+}
 
 // ValidateAssetPrompts 拒绝未知变量；返回第一个问题的说明。
 func ValidateAssetPrompts(a AssetSettings) string {
