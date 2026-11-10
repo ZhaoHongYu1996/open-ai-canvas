@@ -1198,8 +1198,8 @@ func TestVolcengineArkImageBodyUsesJSONReferencesAndDownscalesSize(t *testing.T)
 	if body["prompt"] != "keep the subject\n\ncombine the references" {
 		t.Fatalf("prompt = %q", body["prompt"])
 	}
-	if watermark, ok := body["watermark"].(bool); !ok || watermark {
-		t.Fatalf("watermark = %#v, want false", body["watermark"])
+	if _, exists := body["watermark"]; exists {
+		t.Fatalf("watermark = %#v, want omitted without model capability", body["watermark"])
 	}
 	if responseFormat, _ := body["response_format"].(string); responseFormat != "b64_json" {
 		t.Fatalf("response_format = %#v, want b64_json", body["response_format"])
@@ -1213,6 +1213,31 @@ func TestVolcengineArkImageBodyUsesJSONReferencesAndDownscalesSize(t *testing.T)
 	height, _ := strconv.Atoi(parts[1])
 	if width%2 != 0 || height%2 != 0 || int64(width)*int64(height) < volcengineArkImageMinPixels || int64(width)*int64(height) > volcengineArkImageMaxPixels {
 		t.Fatalf("downscaled size = %q", size)
+	}
+}
+
+func TestVolcengineArkImageBodyRespectsWatermarkCapability(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		capability *ImageCapabilityConfig
+		present    bool
+		value      bool
+	}{
+		{name: "missing"},
+		{name: "unsupported", capability: &ImageCapabilityConfig{Watermark: VideoBooleanConfig{Default: true}}},
+		{name: "disabled", capability: &ImageCapabilityConfig{Watermark: VideoBooleanConfig{Supported: true}}, present: true},
+		{name: "enabled", capability: &ImageCapabilityConfig{Watermark: VideoBooleanConfig{Supported: true, Default: true}}, present: true, value: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body, err := volcengineArkImageBody(canvasGenerationInput{ImageCapability: tc.capability})
+			if err != nil {
+				t.Fatal(err)
+			}
+			value, exists := body["watermark"]
+			if exists != tc.present || (exists && value != tc.value) {
+				t.Fatalf("watermark = %#v, present = %v; want %v, present = %v", value, exists, tc.value, tc.present)
+			}
+		})
 	}
 }
 

@@ -866,8 +866,20 @@ func TestOfficialTSAIMapsGatewayContracts(t *testing.T) {
 		t.Fatal(err)
 	}
 	h3OptionsBody := manifestTestBody(t, h3OptionsCreate)
-	if h3OptionsBody["num_outputs_per_prompt"] != float64(2) || h3OptionsBody["camera_motion"] != "tracking" || h3OptionsBody["seed"] != float64(42) || h3OptionsBody["watermark"] != nil {
+	if h3OptionsBody["num_outputs_per_prompt"] != float64(2) || h3OptionsBody["camera_motion"] != "tracking" || h3OptionsBody["seed"] != float64(42) || h3OptionsBody["watermark"] != false {
 		t.Fatalf("TSAI MiniMax documented optional fields = %#v", h3OptionsBody)
+	}
+	for _, watermark := range []bool{false, true} {
+		request := textRequest
+		request.Watermark = watermark
+		create, err := minimax.BuildCreate(context.Background(), RequestContext{Request: request})
+		if err != nil {
+			t.Fatal(err)
+		}
+		body := manifestTestBody(t, create)
+		if body["watermark"] != watermark {
+			t.Fatalf("TSAI MiniMax watermark = %#v, want %v", body["watermark"], watermark)
+		}
 	}
 
 	frameRequest := GenerationRequest{
