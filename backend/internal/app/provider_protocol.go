@@ -78,6 +78,16 @@ func runProtocolAdapterTaskWithPolicy(ctx context.Context, input canvasGeneratio
 		if err != nil {
 			return nil, err
 		}
+		if input.Mode == "image" && input.ImageCapability != nil {
+			// Apply the model policy after plugin templates have materialized defaults.
+			body := protocolBodyObject(spec.Body)
+			if input.ImageCapability.Watermark.Supported {
+				body["watermark"] = input.ImageCapability.Watermark.Default
+			} else {
+				delete(body, "watermark")
+			}
+			spec.Body = body
+		}
 		if err := validateMediaTransportRequest(spec, input); err != nil {
 			return nil, err
 		}
