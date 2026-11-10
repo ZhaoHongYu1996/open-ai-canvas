@@ -2,9 +2,9 @@
   "apiVersion": "yingce.plugin/v1",
   "id": "tsai",
   "name": "TSAI 网关",
-  "version": "1.1.3",
+  "version": "1.3.0",
   "author": "TSAI / 影策",
-  "description": "随应用自动注册的 TSAI 对话、MiniMax H3、Seedance 2.0 / 2.0 mini 视频与 Seedream 4.5 图片官方系统协议。",
+  "description": "TSAI 对话、Seedance 2.0 系列与 Wan 3.0 视频、MiniMax H3、GPT Image 2 / Banana 2.1 / Seedream 4.5 图片和 Seed Audio 音频的声明式系统协议。",
   "enabled": true,
   "installable": true,
   "permissions": [
@@ -290,22 +290,22 @@
             "name": "images",
             "type": "media[]",
             "required": false,
-            "mapping": "first_frame_image/last_frame_image/image_urls",
-            "description": "按 role 拆到参考图、首帧和尾帧。"
+            "mapping": "conditions[].uri",
+            "description": "图片参考素材；与视频、音频统一映射到 conditions。"
           },
           {
             "name": "videos",
             "type": "media[]",
             "required": false,
-            "mapping": "reference_video",
-            "description": "参考视频。"
+            "mapping": "conditions[].uri",
+            "description": "视频参考素材；映射到 conditions。"
           },
           {
             "name": "audios",
             "type": "media[]",
             "required": false,
-            "mapping": "reference_audio",
-            "description": "参考音频。"
+            "mapping": "conditions[].uri",
+            "description": "音频参考素材；映射到 conditions。"
           },
           {
             "name": "duration",
@@ -318,22 +318,22 @@
             "name": "aspectRatio",
             "type": "string",
             "required": false,
-            "mapping": "aspect_ratio",
-            "description": "画幅比例。"
+            "mapping": "ratio",
+            "description": "画幅比例，例如 16:9。"
           },
           {
             "name": "resolution",
             "type": "string",
             "required": false,
             "mapping": "resolution",
-            "description": "分辨率档位；默认 2K，也支持 768P、480P 和 1080P。"
+            "description": "分辨率；上游枚举使用大写，如 480P、768P、1080P、2K。"
           },
           {
             "name": "generateAudio",
             "type": "boolean",
             "required": false,
             "mapping": "generate_audio",
-            "description": "是否同时生成音频。"
+            "description": "仅当为 true 时发送；false 或未设置时省略。"
           },
           {
             "name": "numOutputsPerPrompt",
@@ -347,7 +347,7 @@
             "type": "string",
             "required": false,
             "mapping": "camera_motion",
-            "description": "平台统一运镜提示。"
+            "description": "平台定义的运镜提示。"
           },
           {
             "name": "seed",
@@ -362,6 +362,13 @@
             "required": false,
             "mapping": "provider-specific fields",
             "description": "渠道扩展字段。"
+          },
+          {
+            "name": "watermark",
+            "type": "boolean",
+            "required": false,
+            "mapping": "watermark",
+            "description": "水印开关；显式 false 会保留。"
           }
         ],
         "validations": [
@@ -610,7 +617,7 @@
                     "$ref": "request.duration"
                   }
                 },
-                "aspect_ratio": {
+                "ratio": {
                   "$omitEmpty": {
                     "$ref": "request.aspectRatio"
                   }
@@ -622,134 +629,124 @@
                     }
                   }
                 },
-                "first_frame_image": {
-                  "$omitEmpty": {
-                    "$first": {
-                      "$map": {
-                        "from": {
-                          "$filter": {
-                            "from": {
-                              "$sortByOrder": {
-                                "$ref": "request.images"
-                              }
-                            },
-                            "as": "media",
-                            "where": {
-                              "$eq": [
-                                {
-                                  "$ref": "media.role"
-                                },
-                                "first_frame"
-                              ]
-                            }
-                          }
-                        },
-                        "as": "media",
-                        "in": {
-                          "$ref": "media.value"
-                        }
-                      }
-                    }
-                  }
-                },
-                "last_frame_image": {
-                  "$omitEmpty": {
-                    "$first": {
-                      "$map": {
-                        "from": {
-                          "$filter": {
-                            "from": {
-                              "$sortByOrder": {
-                                "$ref": "request.images"
-                              }
-                            },
-                            "as": "media",
-                            "where": {
-                              "$eq": [
-                                {
-                                  "$ref": "media.role"
-                                },
-                                "last_frame"
-                              ]
-                            }
-                          }
-                        },
-                        "as": "media",
-                        "in": {
-                          "$ref": "media.value"
-                        }
-                      }
-                    }
-                  }
-                },
-                "image_urls": {
-                  "$omitEmpty": {
-                    "$map": {
-                      "from": {
-                        "$filter": {
-                          "from": {
-                            "$sortByOrder": {
-                              "$ref": "request.images"
-                            }
-                          },
-                          "as": "media",
-                          "where": {
-                            "$and": [
-                              {
-                                "$ne": [
-                                  {
-                                    "$ref": "media.role"
-                                  },
-                                  "first_frame"
-                                ]
-                              },
-                              {
-                                "$ne": [
-                                  {
-                                    "$ref": "media.role"
-                                  },
-                                  "last_frame"
-                                ]
-                              }
-                            ]
-                          }
-                        }
-                      },
-                      "as": "media",
-                      "in": {
-                        "$ref": "media.value"
-                      }
-                    }
-                  }
-                },
-                "video_urls": {
+                "conditions": {
                   "$omitEmpty": {
                     "$map": {
                       "from": {
                         "$sortByOrder": {
-                          "$ref": "request.videos"
+                          "$concatArrays": [
+                            {
+                              "$map": {
+                                "from": {
+                                  "$ref": "request.images"
+                                },
+                                "as": "media",
+                                "in": {
+                                  "kind": "image",
+                                  "value": {
+                                    "$ref": "media.value"
+                                  },
+                                  "role": {
+                                    "$switch": {
+                                      "cases": [
+                                        {
+                                          "when": {
+                                            "$eq": [
+                                              {
+                                                "$ref": "media.role"
+                                              },
+                                              "first_frame"
+                                            ]
+                                          },
+                                          "then": "first_frame"
+                                        },
+                                        {
+                                          "when": {
+                                            "$eq": [
+                                              {
+                                                "$ref": "media.role"
+                                              },
+                                              "last_frame"
+                                            ]
+                                          },
+                                          "then": "last_frame"
+                                        }
+                                      ],
+                                      "default": "reference"
+                                    }
+                                  },
+                                  "order": {
+                                    "$ref": "media.order"
+                                  }
+                                }
+                              }
+                            },
+                            {
+                              "$map": {
+                                "from": {
+                                  "$ref": "request.videos"
+                                },
+                                "as": "media",
+                                "in": {
+                                  "kind": "video",
+                                  "value": {
+                                    "$ref": "media.value"
+                                  },
+                                  "role": "reference",
+                                  "order": {
+                                    "$ref": "media.order"
+                                  }
+                                }
+                              }
+                            },
+                            {
+                              "$map": {
+                                "from": {
+                                  "$ref": "request.audios"
+                                },
+                                "as": "media",
+                                "in": {
+                                  "kind": "audio",
+                                  "value": {
+                                    "$ref": "media.value"
+                                  },
+                                  "role": "reference",
+                                  "order": {
+                                    "$ref": "media.order"
+                                  }
+                                }
+                              }
+                            }
+                          ]
                         }
                       },
-                      "as": "media",
+                      "as": "condition",
                       "in": {
-                        "$ref": "media.value"
+                        "type": {
+                          "$ref": "condition.kind"
+                        },
+                        "uri": {
+                          "$ref": "condition.value"
+                        },
+                        "role": {
+                          "$ref": "condition.role"
+                        }
                       }
                     }
                   }
                 },
-                "audio_urls": {
-                  "$omitEmpty": {
-                    "$map": {
-                      "from": {
-                        "$sortByOrder": {
-                          "$ref": "request.audios"
-                        }
-                      },
-                      "as": "media",
-                      "in": {
-                        "$ref": "media.value"
-                      }
-                    }
+                "generate_audio": {
+                  "$if": {
+                    "condition": {
+                      "$eq": [
+                        {
+                          "$ref": "request.generateAudio"
+                        },
+                        true
+                      ]
+                    },
+                    "then": true,
+                    "else": null
                   }
                 },
                 "num_outputs_per_prompt": {
@@ -773,6 +770,9 @@
                   "$omitEmpty": {
                     "$ref": "request.extra.seed"
                   }
+                },
+                "watermark": {
+                  "$ref": "request.watermark"
                 }
               },
               {
@@ -804,13 +804,7 @@
                 "$ref": "response.data.task_id"
               },
               {
-                "$ref": "response.data.id"
-              },
-              {
                 "$ref": "response.task_id"
-              },
-              {
-                "$ref": "response.id"
               },
               {
                 "$ref": "taskId"
@@ -835,6 +829,9 @@
             "$coalesce": [
               {
                 "$ref": "response.data.error.message"
+              },
+              {
+                "$ref": "response.data.message"
               },
               {
                 "$ref": "response.error.message"
@@ -866,7 +863,7 @@
       },
       {
         "id": "tsai-seedance-mini",
-        "label": "TSAI Seedance 2.0 / 2.0 mini 视频",
+        "label": "TSAI Seedance 2.0 系列 / Wan 3.0 视频",
         "capabilities": [
           "video"
         ],
@@ -938,14 +935,14 @@
             "type": "string",
             "required": false,
             "mapping": "resolution",
-            "description": "分辨率档位；具体支持规格以当前 Seedance 公开模型和渠道为准。"
+            "description": "保留上游大小写；Seedance 与 Wan 使用 480p、720p、1080p。"
           },
           {
             "name": "generateAudio",
             "type": "boolean",
             "required": false,
             "mapping": "generate_audio",
-            "description": "是否同时生成音频。"
+            "description": "是否生成音频；显式 false 也发送。"
           },
           {
             "name": "providerOptions",
@@ -953,6 +950,34 @@
             "required": false,
             "mapping": "provider-specific fields",
             "description": "渠道扩展字段。"
+          },
+          {
+            "name": "numOutputsPerPrompt",
+            "type": "integer",
+            "required": false,
+            "mapping": "num_outputs_per_prompt",
+            "description": "单次输出数量。"
+          },
+          {
+            "name": "cameraMotion",
+            "type": "string",
+            "required": false,
+            "mapping": "camera_motion",
+            "description": "平台定义的运镜提示。"
+          },
+          {
+            "name": "seed",
+            "type": "integer",
+            "required": false,
+            "mapping": "seed",
+            "description": "固定随机种子。"
+          },
+          {
+            "name": "watermark",
+            "type": "boolean",
+            "required": false,
+            "mapping": "watermark",
+            "description": "是否添加水印；显式 false 也发送。"
           }
         ],
         "validations": [
@@ -1281,14 +1306,32 @@
                   }
                 },
                 "generate_audio": {
-                  "$omitEmpty": {
-                    "$ref": "request.generateAudio"
-                  }
+                  "$ref": "request.generateAudio"
                 },
                 "seed": {
                   "$omitEmpty": {
                     "$ref": "request.extra.seed"
                   }
+                },
+                "num_outputs_per_prompt": {
+                  "$omitEmpty": {
+                    "$coalesce": [
+                      {
+                        "$ref": "request.output.count"
+                      },
+                      {
+                        "$ref": "request.imageCount"
+                      }
+                    ]
+                  }
+                },
+                "camera_motion": {
+                  "$omitEmpty": {
+                    "$ref": "request.extra.camera_motion"
+                  }
+                },
+                "watermark": {
+                  "$ref": "request.watermark"
                 }
               },
               {
@@ -1320,13 +1363,7 @@
                 "$ref": "response.data.task_id"
               },
               {
-                "$ref": "response.data.id"
-              },
-              {
                 "$ref": "response.task_id"
-              },
-              {
-                "$ref": "response.id"
               },
               {
                 "$ref": "taskId"
@@ -1351,6 +1388,9 @@
             "$coalesce": [
               {
                 "$ref": "response.data.error.message"
+              },
+              {
+                "$ref": "response.data.message"
               },
               {
                 "$ref": "response.error.message"
@@ -1382,7 +1422,7 @@
       },
       {
         "id": "tsai-seedream",
-        "label": "TSAI Seedream 4.5 图片",
+        "label": "TSAI GPT Image 2 / Banana 2.1 / Seedream 4.5 图片",
         "capabilities": [
           "image"
         ],
@@ -1419,42 +1459,35 @@
             "type": "media[]",
             "required": false,
             "mapping": "image",
-            "description": "单图或多参考图 URL，按提示词中的图1、图2顺序。"
+            "description": "可选参考图；单张发送字符串，多张发送 URL 数组。"
           },
           {
             "name": "imageCount",
             "type": "integer",
             "required": false,
             "mapping": "n",
-            "description": "输出数量；本协议固定一张。"
+            "description": "输出数量。"
           },
           {
             "name": "aspectRatio",
             "type": "string",
             "required": false,
-            "mapping": "size",
-            "description": "2K、4K 或宽高像素。"
+            "mapping": "ratio",
+            "description": "画幅比例，例如 auto、1:1、16:9；按模型支持范围选择。"
           },
           {
             "name": "resolution",
             "type": "string",
             "required": false,
-            "mapping": "size",
-            "description": "分辨率档位，可映射到 size。"
-          },
-          {
-            "name": "quality",
-            "type": "string",
-            "required": false,
-            "mapping": "unused",
-            "description": "TSAI 图片不支持独立质量档。"
+            "mapping": "resolution",
+            "description": "分辨率档位 1k、2k 或 4k；上游使用小写。"
           },
           {
             "name": "watermark",
             "type": "boolean",
             "required": false,
             "mapping": "watermark",
-            "description": "是否添加水印，默认 true。"
+            "description": "水印开关；显式 false 也发送。"
           },
           {
             "name": "providerOptions",
@@ -1507,142 +1540,28 @@
                 "prompt": {
                   "$ref": "request.prompt"
                 },
-                "size": {
+                "resolution": {
                   "$omitEmpty": {
-                    "$switch": {
-                      "cases": [
-                        {
-                          "when": {
-                            "$eq": [
-                              {
-                                "$lower": {
-                                  "$ref": "request.aspectRatio"
-                                }
-                              },
-                              "2k"
-                            ]
-                          },
-                          "then": "2K"
-                        },
-                        {
-                          "when": {
-                            "$eq": [
-                              {
-                                "$lower": {
-                                  "$ref": "request.aspectRatio"
-                                }
-                              },
-                              "4k"
-                            ]
-                          },
-                          "then": "4K"
-                        },
-                        {
-                          "when": {
-                            "$eq": [
-                              {
-                                "$lower": {
-                                  "$ref": "request.aspectRatio"
-                                }
-                              },
-                              "auto"
-                            ]
-                          },
-                          "then": "2K"
-                        },
-                        {
-                          "when": {
-                            "$eq": [
-                              {
-                                "$ref": "request.aspectRatio"
-                              },
-                              "1:1"
-                            ]
-                          },
-                          "then": "2048x2048"
-                        },
-                        {
-                          "when": {
-                            "$eq": [
-                              {
-                                "$ref": "request.aspectRatio"
-                              },
-                              "16:9"
-                            ]
-                          },
-                          "then": "2560x1440"
-                        },
-                        {
-                          "when": {
-                            "$eq": [
-                              {
-                                "$ref": "request.aspectRatio"
-                              },
-                              "9:16"
-                            ]
-                          },
-                          "then": "1440x2560"
-                        },
-                        {
-                          "when": {
-                            "$eq": [
-                              {
-                                "$ref": "request.aspectRatio"
-                              },
-                              "4:3"
-                            ]
-                          },
-                          "then": "2304x1728"
-                        },
-                        {
-                          "when": {
-                            "$eq": [
-                              {
-                                "$ref": "request.aspectRatio"
-                              },
-                              "3:4"
-                            ]
-                          },
-                          "then": "1728x2304"
-                        },
-                        {
-                          "when": {
-                            "$eq": [
-                              {
-                                "$ref": "request.aspectRatio"
-                              },
-                              "3:2"
-                            ]
-                          },
-                          "then": "2496x1664"
-                        },
-                        {
-                          "when": {
-                            "$eq": [
-                              {
-                                "$ref": "request.aspectRatio"
-                              },
-                              "2:3"
-                            ]
-                          },
-                          "then": "1664x2496"
-                        },
-                        {
-                          "when": {
-                            "$eq": [
-                              {
-                                "$ref": "request.aspectRatio"
-                              },
-                              "21:9"
-                            ]
-                          },
-                          "then": "3024x1296"
-                        }
-                      ],
-                      "default": {
-                        "$ref": "request.aspectRatio"
-                      }
+                    "$lower": {
+                      "$ref": "request.resolution"
                     }
+                  }
+                },
+                "ratio": {
+                  "$omitEmpty": {
+                    "$ref": "request.aspectRatio"
+                  }
+                },
+                "n": {
+                  "$omitEmpty": {
+                    "$coalesce": [
+                      {
+                        "$ref": "request.output.count"
+                      },
+                      {
+                        "$ref": "request.imageCount"
+                      }
+                    ]
                   }
                 },
                 "image": {
@@ -1689,13 +1608,8 @@
                     }
                   }
                 },
-                "sequential_image_generation": "disabled",
-                "response_format": "url",
-                "stream": false,
                 "watermark": {
-                  "$omitEmpty": {
-                    "$ref": "request.watermark"
-                  }
+                  "$ref": "request.watermark"
                 }
               },
               {
@@ -1754,8 +1668,356 @@
           ],
           "resultEphemeral": false
         }
+      },
+      {
+        "id": "tsai-seed-audio",
+        "label": "TSAI Seed Audio 音频",
+        "capabilities": [
+          "audio"
+        ],
+        "scopes": [
+          "admin.system-channel",
+          "user.custom-channel",
+          "canvas",
+          "creation",
+          "agent"
+        ],
+        "baseUrl": "https://api.alifenqi.com:8188",
+        "requiresPublicMediaUrls": true,
+        "auth": {
+          "type": "bearer",
+          "field": "apiKey"
+        },
+        "parameters": [
+          {
+            "name": "model",
+            "type": "string",
+            "required": true,
+            "mapping": "model",
+            "description": "音频模型 ID，当前为 seed-audio。"
+          },
+          {
+            "name": "prompt",
+            "type": "string",
+            "required": true,
+            "mapping": "prompt",
+            "description": "需要朗读或生成声音的文本，不能为空。"
+          },
+          {
+            "name": "speechRate",
+            "type": "integer",
+            "required": false,
+            "mapping": "speech_rate",
+            "description": "语速档位编码：0、20、40、60、80 或 100；不是速度倍率。"
+          },
+          {
+            "name": "audios",
+            "type": "media[]",
+            "required": false,
+            "mapping": "reference_audio",
+            "description": "最多 3 条参考音频；不能同时传参考图片。"
+          },
+          {
+            "name": "images",
+            "type": "media[]",
+            "required": false,
+            "mapping": "reference_image",
+            "description": "最多 1 张参考图片；不能同时传参考音频。"
+          },
+          {
+            "name": "providerOptions",
+            "type": "object",
+            "required": false,
+            "mapping": "provider-specific fields",
+            "description": "该 Provider 命名空间内的扩展字段。"
+          }
+        ],
+        "validations": [
+          {
+            "assert": {
+              "$gt": [
+                {
+                  "$len": {
+                    "$trim": {
+                      "$ref": "request.prompt"
+                    }
+                  }
+                },
+                0
+              ]
+            },
+            "message": "TSAI Seed Audio 需要填写 prompt"
+          },
+          {
+            "assert": {
+              "$lte": [
+                {
+                  "$len": {
+                    "$ref": "request.audios"
+                  }
+                },
+                3
+              ]
+            },
+            "message": "TSAI Seed Audio 最多支持 3 条参考音频"
+          },
+          {
+            "assert": {
+              "$lte": [
+                {
+                  "$len": {
+                    "$ref": "request.images"
+                  }
+                },
+                1
+              ]
+            },
+            "message": "TSAI Seed Audio 最多支持 1 张参考图片"
+          },
+          {
+            "assert": {
+              "$or": [
+                {
+                  "$eq": [
+                    {
+                      "$len": {
+                        "$ref": "request.audios"
+                      }
+                    },
+                    0
+                  ]
+                },
+                {
+                  "$eq": [
+                    {
+                      "$len": {
+                        "$ref": "request.images"
+                      }
+                    },
+                    0
+                  ]
+                }
+              ]
+            },
+            "message": "TSAI Seed Audio 的参考音频和参考图片不能同时使用"
+          }
+        ],
+        "create": {
+          "method": "POST",
+          "path": "/v1/audio/generations",
+          "contentType": "application/json",
+          "body": {
+            "$merge": [
+              {
+                "model": {
+                  "$ref": "request.model"
+                },
+                "prompt": {
+                  "$ref": "request.prompt"
+                },
+                "speech_rate": {
+                  "$omitEmpty": {
+                    "$coalesce": [
+                      {
+                        "$ref": "request.extra.speech_rate"
+                      },
+                      {
+                        "$ref": "request.providerOptions.tsai-seed-audio.speech_rate"
+                      }
+                    ]
+                  }
+                },
+                "reference_audio": {
+                  "$omitEmpty": {
+                    "$map": {
+                      "from": {
+                        "$sortByOrder": {
+                          "$ref": "request.audios"
+                        }
+                      },
+                      "as": "media",
+                      "in": {
+                        "$ref": "media.value"
+                      }
+                    }
+                  }
+                },
+                "reference_image": {
+                  "$omitEmpty": {
+                    "$map": {
+                      "from": {
+                        "$sortByOrder": {
+                          "$ref": "request.images"
+                        }
+                      },
+                      "as": "media",
+                      "in": {
+                        "$ref": "media.value"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "$coalesce": [
+                  {
+                    "$ref": "request.providerOptions.tsai-seed-audio.body"
+                  },
+                  {
+                    "$ref": "request.providerOptions.tsai-seed-audio.extra_body"
+                  },
+                  {}
+                ]
+              }
+            ]
+          }
+        },
+        "poll": {
+          "method": "GET",
+          "path": "/v1/audio/generations/{{taskId}}",
+          "contentType": "application/json"
+        },
+        "response": {
+          "taskId": {
+            "$coalesce": [
+              {
+                "$ref": "response.data.0.task_id"
+              },
+              {
+                "$ref": "response.data.task_id"
+              },
+              {
+                "$ref": "response.task_id"
+              },
+              {
+                "$ref": "response.data.0.id"
+              },
+              {
+                "$ref": "response.data.id"
+              },
+              {
+                "$ref": "response.id"
+              },
+              {
+                "$ref": "taskId"
+              }
+            ]
+          },
+          "status": {
+            "$coalesce": [
+              {
+                "$ref": "response.data.0.status"
+              },
+              {
+                "$ref": "response.data.status"
+              },
+              {
+                "$ref": "response.status"
+              },
+              "pending"
+            ]
+          },
+          "message": {
+            "$coalesce": [
+              {
+                "$ref": "response.data.0.error.message"
+              },
+              {
+                "$ref": "response.data.error.message"
+              },
+              {
+                "$ref": "response.error.message"
+              },
+              {
+                "$ref": "response.message"
+              },
+              {
+                "$ref": "response.detail"
+              }
+            ]
+          },
+          "audios": {
+            "$coalesce": [
+              {
+                "$ref": "response.audio_url"
+              },
+              {
+                "$ref": "response.audioUrl"
+              },
+              {
+                "$ref": "response.result_url"
+              },
+              {
+                "$ref": "response.url"
+              },
+              {
+                "$ref": "response.audio"
+              },
+              {
+                "$ref": "response.data.audio_url"
+              },
+              {
+                "$ref": "response.data.audioUrl"
+              },
+              {
+                "$ref": "response.data.url"
+              },
+              {
+                "$ref": "response.data.audio"
+              },
+              {
+                "$ref": "response.data.audios"
+              },
+              {
+                "$ref": "response.data.result.audios"
+              },
+              {
+                "$ref": "response.data.0.audio_url"
+              },
+              {
+                "$ref": "response.data.0.audioUrl"
+              },
+              {
+                "$ref": "response.data.0.url"
+              },
+              {
+                "$ref": "response.result.audio_url"
+              },
+              {
+                "$ref": "response.result.audioUrl"
+              },
+              {
+                "$ref": "response.result.url"
+              },
+              {
+                "$ref": "response.result.audios"
+              },
+              {
+                "$ref": "response.output.audio_url"
+              },
+              {
+                "$ref": "response.output.url"
+              },
+              {
+                "$ref": "response.output.audio"
+              },
+              {
+                "$ref": "response.data"
+              }
+            ]
+          },
+          "errorPaths": [
+            "error.code",
+            "data.error.code"
+          ],
+          "messagePaths": [
+            "error.message",
+            "data.error.message"
+          ],
+          "resultEphemeral": true
+        }
       }
     ]
   },
-  "documentation": "# TSAI 网关协议\n\n本目录是随应用启动自动注册的官方系统协议源码。`tsai.yingce-plugin` 使用保留的官方插件 ID `tsai`，不能再通过「插件管理」上传覆盖；需要手动上传时，请使用 `plugin-packages/uploadable/tsai-upload.yingce-plugin`，该副本使用独立的插件和 Provider ID。本包是声明式协议，不依赖系统宿主 `host:` 执行器。\n\n面向 [TSAI 开发者文档](https://api.alifenqi.com:8188/app/#docs)：统一 v1 Manifest 与一个 `.yingce-plugin` 包覆盖对话、MiniMax H3、Seedance 2.0 / 2.0 mini 视频，以及 Seedream 4.5 图片。渠道 Base URL 填 `https://api.alifenqi.com:8188`，不要再重复写 `/v1`。模型 ID 以 `/v1/models` 返回结果为准。\n\n\n详细接口见 [docs/interface.md](docs/interface.md)。\n\n---\n\n# TSAI 网关接口字段\n\n该包使用 `yingce.plugin/v1` 统一 Manifest。协议和配置同属一个 `.yingce-plugin` 生命周期；包内不含 Web 入口代码，所有上游请求都由宿主声明式运行时发送。\n\n## 协议身份\n\n- 插件 ID：`tsai`。\n- Provider：`tsai-chat`（文本）、`tsai-minimax-h3`（视频）、`tsai-seedance-mini`（Seedance 2.0 与 2.0 mini 视频）、`tsai-seedream`（图片）。\n- 默认 Base URL：`https://api.alifenqi.com:8188`，不要再重复写 `/v1`。\n- 鉴权：渠道密钥，类型 `bearer`，请求头 `Authorization: Bearer <apiKey>`。\n- 对话：`POST /v1/chat/completions`，OpenAI Chat Completions 格式。\n- MiniMax H3 / Seedance 2.0 / 2.0 mini 创建：`POST /v1/videos/generations`。\n- 视频查询：`GET /v1/videos/{{taskId}}`。\n- Seedream 4.5 创建：`POST /v1/images/generations`。\n- 图片长任务查询：`GET /v1/images/generations/{{taskId}}`。\n\n渠道 Base URL 只填协议服务根。密钥只由后端渠道中转读取，不要放进浏览器 URL、清单或日志。公网素材必须直接可下载，不接受内网 URL、重定向和 Base64。\n\n## 配置字段\n\n| 字段 | 类型 | 必填 | 说明 |\n| --- | --- | --- | --- |\n| `apiKey` | secret | 是 | TSAI 个人中心生成的 API Key，不要发送 DeepSeek 原始密钥或网页登录令牌。 |\n\n## 统一字段映射\n\n| 统一字段 | 类型 | 必填 | 实际上游映射 | 说明 |\n| --- | --- | --- | --- | --- |\n| `model` | string | 是 | `model` | 以 TSAI `GET /v1/models` 为准，例如 `deepseek-v4-flash`、`MiniMax/MiniMax-H3`、Seedance 2.0 / mini 的公开 ID、`doubao-seedream-4-5-251128`。 |\n| `messages` | message[] | 对话必填 | `messages` | OpenAI `role`/`content` 消息列表。 |\n| `instructions` | string | 否 | `system/instructions` | 系统指令。 |\n| `prompt` | string | 视频/图片必填 | `prompt` | MiniMax 最多 7000 字；Seedance / Seedream 最多 20000 字。 |\n| `images` | media[] | 否 | MiniMax：首尾帧字段或 `image_urls`；Seedance：`conditions[]`；Seedream：`image` | Seedance 条件使用 `{type:\"image\", uri, role}`；首尾帧与普通多模态参考不能混用。最多 9 张。 |\n| `videos` | media[] | 否 | MiniMax：`video_urls`；Seedance：`conditions[]` | Seedance 条件使用 `{type:\"video\", uri, role:\"reference\"}`，最多 3 段。 |\n| `audios` | media[] | 否 | MiniMax：`audio_urls`；Seedance：`conditions[]` | Seedance 条件使用 `{type:\"audio\", uri, role:\"reference\"}`，最多 3 段；MiniMax 音频必须搭配图片或视频。 |\n| `duration` | integer | 否 | `duration` | MiniMax H3 为 4–15 秒、默认 5；Seedance 按公开模型与所选渠道能力校验。 |\n| `aspectRatio` | string | 否 | MiniMax：`aspect_ratio`；Seedance：`ratio`；Seedream：`size` | 视频画幅或图片尺寸档；Seedance 示例为 `16:9`，范围按公开模型与渠道能力。 |\n| `resolution` | string | 否 | `resolution` | MiniMax 转大写（`2K`/`768P`/`480P`/`1080P`）；Seedance 保留上游枚举大小写。 |\n| `generateAudio` | boolean | 否 | `generate_audio` | Seedance 是否同时生成声音。 |\n| `watermark` | boolean | 否 | Seedream：`watermark` | Seedream 默认 true。MiniMax 只允许 false 或省略；Seedance 不发送该字段。 |\n| `cameraMotion` | string | 否 | MiniMax：`camera_motion` | 使用平台定义的运镜值。 |\n| `seed` | integer | 否 | MiniMax / Seedance：`seed` | 固定随机种子；省略时沿用服务端随机策略。 |\n| `numOutputsPerPrompt` | integer | 否 | MiniMax：`num_outputs_per_prompt` | 数量受模型、账号权益和平台并发限制。 |\n| `temperature` | number | 否 | `temperature` | 对话采样温度。 |\n| `top_p` | number | 否 | `top_p` | 对话核采样。 |\n| `max_tokens` | integer | 否 | `max_tokens` | 对话最大输出 token。 |\n| `tools` | array | 否 | `tools` | 对话工具定义。 |\n| `tool_choice` | object\\|string | 否 | `tool_choice` | 对话工具选择策略。 |\n| `response_format` | object | 否 | `response_format` | 对话结构化输出。 |\n| `stream` | boolean | 否 | `stream` | 对话流式开关；后台任务当前以最终响应归一。 |\n| `imageCount` | integer | 否 | 固定 1 | Seedream 每次只输出一张图。 |\n| `quality` | string | 否 | 不发送 | TSAI 图片不支持独立质量档。 |\n\n## 创建请求模型与字段清单\n\n| 请求位置 | 值或转换表达式 |\n| --- | --- |\n| `tsai-chat.create.method` | `\"POST\"` |\n| `tsai-chat.create.path` | `\"/v1/chat/completions\"` |\n| `tsai-chat.create.body.model` | `request.model` |\n| `tsai-chat.create.body.messages` | `request.messages` |\n| `tsai-chat.agent.path` | `\"/v1/chat/completions\"` |\n| `tsai-minimax-h3.create.path` | `\"/v1/videos/generations\"` |\n| `tsai-minimax-h3.create.body.prompt` | `request.prompt` |\n| `tsai-minimax-h3.create.body.first_frame_image` | role=`first_frame` 的图片 URL |\n| `tsai-minimax-h3.create.body.last_frame_image` | role=`last_frame` 的图片 URL |\n| `tsai-minimax-h3.create.body.image_urls` | 其余参考图 URL 数组 |\n| `tsai-minimax-h3.create.body.video_urls` | 参考视频 URL 数组 |\n| `tsai-minimax-h3.create.body.audio_urls` | 参考音频 URL 数组 |\n| `tsai-minimax-h3.create.body.aspect_ratio` | `request.aspectRatio` |\n| `tsai-minimax-h3.create.body.resolution` | `request.resolution` 转大写 |\n| `tsai-minimax-h3.poll.path` | `\"/v1/videos/{{taskId}}\"` |\n| `tsai-seedance-mini.create.path` | `\"/v1/videos/generations\"` |\n| `tsai-seedance-mini.create.body.prompt` | `request.prompt` |\n| `tsai-seedance-mini.create.body.conditions` | 按顺序排列的 `{type, uri, role}` 图片/视频/音频参考；纯文生视频时省略 |\n| `tsai-seedance-mini.create.body.ratio` | `request.aspectRatio` |\n| `tsai-seedance-mini.create.body.resolution` | `request.resolution` |\n| `tsai-seedance-mini.create.body.generate_audio` | `request.generateAudio` |\n| `tsai-seedance-mini.create.body.seed` | `request.extra.seed` |\n| `tsai-seedance-mini.poll.path` | `\"/v1/videos/{{taskId}}\"` |\n| `tsai-seedream.create.path` | `\"/v1/images/generations\"` |\n| `tsai-seedream.create.body.size` | `2K`/`4K` 或由比例映射的像素尺寸 |\n| `tsai-seedream.create.body.image` | 参考图 URL；一张发字符串，多张发数组 |\n| `tsai-seedream.create.body.sequential_image_generation` | `\"disabled\"` |\n| `tsai-seedream.create.body.response_format` | `\"url\"` |\n| `tsai-seedream.create.body.stream` | `false` |\n| `tsai-seedream.poll.path` | `\"/v1/images/generations/{{taskId}}\"` |\n\n## Provider 扩展点\n\n- `providerOptions.tsai-chat.body`\n- `providerOptions.tsai-chat.extra_body`\n- `providerOptions.tsai-chat.thinking`\n- `providerOptions.tsai-minimax-h3.body`\n- `providerOptions.tsai-minimax-h3.extra_body`\n- `providerOptions.tsai-seedance-mini.body`\n- `providerOptions.tsai-seedance-mini.extra_body`\n- `providerOptions.tsai-seedream.body`\n- `providerOptions.tsai-seedream.extra_body`\n\n动态模型或网关需要额外字段时，写入上述对象；该对象不是协议本身的固定 schema，不会被清单校验。\n\n## 响应映射表与字段清单\n\n| 映射位置 | 解析路径或转换表达式 |\n| --- | --- |\n| `tsai-chat.response.text` | `choices.0.message.content` / `choices.0.text` |\n| `tsai-minimax-h3.response.taskId` | `data.0.task_id` / `data.id` / `task_id` |\n| `tsai-minimax-h3.response.status` | `data.0.status` / `data.status` / `status` |\n| `tsai-minimax-h3.response.videos` | `data.result.videos` |\n| `tsai-seedance-mini.response.taskId` | 与 MiniMax 相同 |\n| `tsai-seedance-mini.response.videos` | `data.result.videos` |\n| `tsai-seedream.response.taskId` | `id` |\n| `tsai-seedream.response.status` | `status` |\n| `tsai-seedream.response.images` | `data` |\n| `response.errorPaths` | `error.code` / `data.error.code` |\n\n## 响应约定\n\n视频提交返回 `{ code: 200, data: [{ status: \"submitted\", task_id }] }`，必须用 `data[0].task_id` 查询，不能使用上游内部任务 ID。轮询对象在 `data` 里，成功状态为 `succeeded`，结果取 `data.result.videos[0].url`。`submitted`/`queued` 视为等待，`processing` 视为处理中。图片通常同步返回 `status=succeeded` 与平台文件 URL；超过约 120 秒则返回 HTTP 202 和同一 `id`，再用创建任务的同一把 Key 查询，不要重新提交。对话成功后直接取 `choices[0].message.content`。HTTP 非 2xx、业务 error object 记为失败。当前没有取消接口。\n\n<!-- YINGCE_MANIFEST_CONTRACT_START -->\n## Manifest 完整接口定义\n\n以下 JSON 与插件包内实际 `manifest.json` 逐字段一致，覆盖插件身份、权限、配置、鉴权、参数、校验、创建、Agent、查询、取消、结果下载、响应和 Agent 响应映射。`documentation` 字段的值就是当前完整文档；为避免文档在自身内部无限递归，JSON 中仅用等义占位文本表示正文。\n\n```json\n{\n  \"apiVersion\": \"yingce.plugin/v1\",\n  \"id\": \"tsai\",\n  \"name\": \"TSAI 网关\",\n  \"version\": \"1.1.3\",\n  \"author\": \"TSAI / 影策\",\n  \"description\": \"随应用自动注册的 TSAI 对话、MiniMax H3、Seedance 2.0 / 2.0 mini 视频与 Seedream 4.5 图片官方系统协议。\",\n  \"enabled\": true,\n  \"installable\": true,\n  \"permissions\": [\n    \"generation.run\",\n    \"media.read\"\n  ],\n  \"configuration\": {\n    \"fields\": [\n      {\n        \"name\": \"apiKey\",\n        \"type\": \"secret\",\n        \"label\": \"API Key\",\n        \"required\": true\n      }\n    ]\n  },\n  \"contributes\": {\n    \"providers\": [\n      {\n        \"id\": \"tsai-chat\",\n        \"label\": \"TSAI 通用对话\",\n        \"capabilities\": [\n          \"text\"\n        ],\n        \"scopes\": [\n          \"admin.system-channel\",\n          \"user.custom-channel\",\n          \"canvas\",\n          \"creation\",\n          \"agent\"\n        ],\n        \"baseUrl\": \"https://api.alifenqi.com:8188\",\n        \"requiresPublicMediaUrls\": false,\n        \"auth\": {\n          \"type\": \"bearer\",\n          \"field\": \"apiKey\"\n        },\n        \"parameters\": [\n          {\n            \"name\": \"model\",\n            \"type\": \"string\",\n            \"required\": true,\n            \"mapping\": \"model\",\n            \"description\": \"对话模型 ID。\"\n          },\n          {\n            \"name\": \"messages\",\n            \"type\": \"message[]\",\n            \"required\": true,\n            \"mapping\": \"provider message container\",\n            \"description\": \"包含历史消息和当前用户输入。\"\n          },\n          {\n            \"name\": \"instructions\",\n            \"type\": \"string\",\n            \"required\": false,\n            \"mapping\": \"system/instructions\",\n            \"description\": \"系统指令。\"\n          },\n          {\n            \"name\": \"temperature\",\n            \"type\": \"number\",\n            \"required\": false,\n            \"mapping\": \"temperature\",\n            \"description\": \"采样温度。\"\n          },\n          {\n            \"name\": \"top_p\",\n            \"type\": \"number\",\n            \"required\": false,\n            \"mapping\": \"top_p\",\n            \"description\": \"核采样参数。\"\n          },\n          {\n            \"name\": \"max_tokens\",\n            \"type\": \"integer\",\n            \"required\": false,\n            \"mapping\": \"max_tokens\",\n            \"description\": \"最大输出 token。\"\n          },\n          {\n            \"name\": \"tools\",\n            \"type\": \"array\",\n            \"required\": false,\n            \"mapping\": \"tools\",\n            \"description\": \"工具定义。\"\n          },\n          {\n            \"name\": \"tool_choice\",\n            \"type\": \"object|string\",\n            \"required\": false,\n            \"mapping\": \"tool_choice\",\n            \"description\": \"工具选择策略。\"\n          },\n          {\n            \"name\": \"response_format\",\n            \"type\": \"object\",\n            \"required\": false,\n            \"mapping\": \"response_format\",\n            \"description\": \"结构化输出配置。\"\n          },\n          {\n            \"name\": \"stream\",\n            \"type\": \"boolean\",\n            \"required\": false,\n            \"mapping\": \"stream\",\n            \"description\": \"流式开关；后台任务当前以最终响应归一。\"\n          },\n          {\n            \"name\": \"providerOptions\",\n            \"type\": \"object\",\n            \"required\": false,\n            \"mapping\": \"provider-specific fields\",\n            \"description\": \"渠道扩展字段。\"\n          }\n        ],\n        \"create\": {\n          \"method\": \"POST\",\n          \"path\": \"/v1/chat/completions\",\n          \"contentType\": \"application/json\",\n          \"body\": {\n            \"$merge\": [\n              {\n                \"model\": {\n                  \"$ref\": \"request.model\"\n                },\n                \"messages\": {\n                  \"$ref\": \"request.messages\"\n                },\n                \"temperature\": {\n                  \"$omitEmpty\": {\n                    \"$ref\": \"request.providerOptions.tsai-chat.temperature\"\n                  }\n                },\n                \"top_p\": {\n                  \"$omitEmpty\": {\n                    \"$ref\": \"request.providerOptions.tsai-chat.top_p\"\n                  }\n                },\n                \"max_tokens\": {\n                  \"$omitEmpty\": {\n                    \"$coalesce\": [\n                      {\n                        \"$ref\": \"request.extra.max_tokens\"\n                      },\n                      {\n                        \"$ref\": \"request.providerOptions.tsai-chat.max_tokens\"\n                      }\n                    ]\n                  }\n                },\n                \"thinking\": {\n                  \"$omitEmpty\": {\n                    \"$ref\": \"request.providerOptions.tsai-chat.thinking\"\n                  }\n                },\n                \"tools\": {\n                  \"$omitEmpty\": {\n                    \"$ref\": \"request.providerOptions.tsai-chat.tools\"\n                  }\n                },\n                \"tool_choice\": {\n                  \"$omitEmpty\": {\n                    \"$ref\": \"request.providerOptions.tsai-chat.tool_choice\"\n                  }\n                },\n                \"response_format\": {\n                  \"$omitEmpty\": {\n                    \"$ref\": \"request.providerOptions.tsai-chat.response_format\"\n                  }\n                },\n                \"stream\": {\n                  \"$omitEmpty\": {\n                    \"$ref\": \"request.providerOptions.tsai-chat.stream\"\n                  }\n                }\n              },\n              {\n                \"$coalesce\": [\n                  {\n                    \"$ref\": \"request.providerOptions.tsai-chat.body\"\n                  },\n                  {\n                    \"$ref\": \"request.providerOptions.tsai-chat.extra_body\"\n                  },\n                  {}\n                ]\n              }\n            ]\n          }\n        },\n        \"agent\": {\n          \"method\": \"POST\",\n          \"path\": \"/v1/chat/completions\",\n          \"contentType\": \"application/json\",\n          \"body\": {\n            \"$merge\": [\n              {\n                \"$ref\": \"request.extra.agent.chatCompletion\"\n              },\n              {\n                \"model\": {\n                  \"$ref\": \"request.model\"\n                }\n              }\n            ]\n          }\n        },\n        \"response\": {\n          \"status\": \"succeeded\",\n          \"textPaths\": [\n            \"choices.0.message.content\",\n            \"choices.0.text\"\n          ],\n          \"reasoningPaths\": [\n            \"choices.0.message.reasoning_content\"\n          ],\n          \"usage\": {\n            \"$ref\": \"response.usage\"\n          },\n          \"errorPaths\": [\n            \"error.code\"\n          ],\n          \"messagePaths\": [\n            \"error.message\"\n          ]\n        },\n        \"agentResponse\": {\n          \"textPaths\": [\n            \"choices.0.message.content\",\n            \"choices.0.text\"\n          ],\n          \"reasoningPaths\": [\n            \"choices.0.message.reasoning_content\"\n          ],\n          \"toolCallsPath\": \"choices.0.message.tool_calls\",\n          \"toolCallIdPaths\": [\n            \"id\"\n          ],\n          \"toolCallNamePaths\": [\n            \"function.name\"\n          ],\n          \"toolCallArgumentsPaths\": [\n            \"function.arguments\"\n          ]\n        }\n      },\n      {\n        \"id\": \"tsai-minimax-h3\",\n        \"label\": \"TSAI MiniMax H3 视频\",\n        \"capabilities\": [\n          \"video\"\n        ],\n        \"scopes\": [\n          \"admin.system-channel\",\n          \"user.custom-channel\",\n          \"canvas\",\n          \"creation\",\n          \"agent\"\n        ],\n        \"baseUrl\": \"https://api.alifenqi.com:8188\",\n        \"requiresPublicMediaUrls\": true,\n        \"auth\": {\n          \"type\": \"bearer\",\n          \"field\": \"apiKey\"\n        },\n        \"parameters\": [\n          {\n            \"name\": \"model\",\n            \"type\": \"string\",\n            \"required\": true,\n            \"mapping\": \"model\",\n            \"description\": \"视频模型 ID。\"\n          },\n          {\n            \"name\": \"prompt\",\n            \"type\": \"string\",\n            \"required\": true,\n            \"mapping\": \"prompt\",\n            \"description\": \"视频提示词。\"\n          },\n          {\n            \"name\": \"images\",\n            \"type\": \"media[]\",\n            \"required\": false,\n            \"mapping\": \"first_frame_image/last_frame_image/image_urls\",\n            \"description\": \"按 role 拆到参考图、首帧和尾帧。\"\n          },\n          {\n            \"name\": \"videos\",\n            \"type\": \"media[]\",\n            \"required\": false,\n            \"mapping\": \"reference_video\",\n            \"description\": \"参考视频。\"\n          },\n          {\n            \"name\": \"audios\",\n            \"type\": \"media[]\",\n            \"required\": false,\n            \"mapping\": \"reference_audio\",\n            \"description\": \"参考音频。\"\n          },\n          {\n            \"name\": \"duration\",\n            \"type\": \"integer\",\n            \"required\": false,\n            \"mapping\": \"duration\",\n            \"description\": \"时长秒数，默认 5，支持 4–15 秒。\"\n          },\n          {\n            \"name\": \"aspectRatio\",\n            \"type\": \"string\",\n            \"required\": false,\n            \"mapping\": \"aspect_ratio\",\n            \"description\": \"画幅比例。\"\n          },\n          {\n            \"name\": \"resolution\",\n            \"type\": \"string\",\n            \"required\": false,\n            \"mapping\": \"resolution\",\n            \"description\": \"分辨率档位；默认 2K，也支持 768P、480P 和 1080P。\"\n          },\n          {\n            \"name\": \"generateAudio\",\n            \"type\": \"boolean\",\n            \"required\": false,\n            \"mapping\": \"generate_audio\",\n            \"description\": \"是否同时生成音频。\"\n          },\n          {\n            \"name\": \"numOutputsPerPrompt\",\n            \"type\": \"integer\",\n            \"required\": false,\n            \"mapping\": \"num_outputs_per_prompt\",\n            \"description\": \"单次输出数量。\"\n          },\n          {\n            \"name\": \"cameraMotion\",\n            \"type\": \"string\",\n            \"required\": false,\n            \"mapping\": \"camera_motion\",\n            \"description\": \"平台统一运镜提示。\"\n          },\n          {\n            \"name\": \"seed\",\n            \"type\": \"integer\",\n            \"required\": false,\n            \"mapping\": \"seed\",\n            \"description\": \"固定随机种子。\"\n          },\n          {\n            \"name\": \"providerOptions\",\n            \"type\": \"object\",\n            \"required\": false,\n            \"mapping\": \"provider-specific fields\",\n            \"description\": \"渠道扩展字段。\"\n          }\n        ],\n        \"validations\": [\n          {\n            \"assert\": {\n              \"$gt\": [\n                {\n                  \"$len\": {\n                    \"$trim\": {\n                      \"$ref\": \"request.prompt\"\n                    }\n                  }\n                },\n                0\n              ]\n            },\n            \"message\": \"TSAI MiniMax H3 需要填写 prompt\"\n          },\n          {\n            \"assert\": {\n              \"$lte\": [\n                {\n                  \"$len\": {\n                    \"$ref\": \"request.prompt\"\n                  }\n                },\n                7000\n              ]\n            },\n            \"message\": \"TSAI MiniMax H3 的 prompt 最多 7000 个字符\"\n          },\n          {\n            \"assert\": {\n              \"$lte\": [\n                {\n                  \"$len\": {\n                    \"$ref\": \"request.images\"\n                  }\n                },\n                9\n              ]\n            },\n            \"message\": \"TSAI MiniMax H3 最多支持 9 张参考图片\"\n          },\n          {\n            \"assert\": {\n              \"$lte\": [\n                {\n                  \"$len\": {\n                    \"$ref\": \"request.videos\"\n                  }\n                },\n                3\n              ]\n            },\n            \"message\": \"TSAI MiniMax H3 最多支持 3 个参考视频\"\n          },\n          {\n            \"assert\": {\n              \"$lte\": [\n                {\n                  \"$len\": {\n                    \"$ref\": \"request.audios\"\n                  }\n                },\n                3\n              ]\n            },\n            \"message\": \"TSAI MiniMax H3 最多支持 3 个参考音频\"\n          },\n          {\n            \"assert\": {\n              \"$or\": [\n                {\n                  \"$and\": [\n                    {\n                      \"$eq\": [\n                        {\n                          \"$len\": {\n                            \"$filter\": {\n                              \"from\": {\n                                \"$sortByOrder\": {\n                                  \"$ref\": \"request.images\"\n                                }\n                              },\n                              \"as\": \"media\",\n                              \"where\": {\n                                \"$eq\": [\n                                  {\n                                    \"$ref\": \"media.role\"\n                                  },\n                                  \"first_frame\"\n                                ]\n                              }\n                            }\n                          }\n                        },\n                        0\n                      ]\n                    },\n                    {\n                      \"$eq\": [\n                        {\n                          \"$len\": {\n                            \"$filter\": {\n                              \"from\": {\n                                \"$sortByOrder\": {\n                                  \"$ref\": \"request.images\"\n                                }\n                              },\n                              \"as\": \"media\",\n                              \"where\": {\n                                \"$eq\": [\n                                  {\n                                    \"$ref\": \"media.role\"\n                                  },\n                                  \"last_frame\"\n                                ]\n                              }\n                            }\n                          }\n                        },\n                        0\n                      ]\n                    }\n                  ]\n                },\n                {\n                  \"$and\": [\n                    {\n                      \"$eq\": [\n                        {\n                          \"$len\": {\n                            \"$filter\": {\n                              \"from\": {\n                                \"$sortByOrder\": {\n                                  \"$ref\": \"request.images\"\n                                }\n                              },\n                              \"as\": \"media\",\n                              \"where\": {\n                                \"$and\": [\n                                  {\n                                    \"$ne\": [\n                                      {\n                                        \"$ref\": \"media.role\"\n                                      },\n                                      \"first_frame\"\n                                    ]\n                                  },\n                                  {\n                                    \"$ne\": [\n                                      {\n                                        \"$ref\": \"media.role\"\n                                      },\n                                      \"last_frame\"\n                                    ]\n                                  }\n                                ]\n                              }\n                            }\n                          }\n                        },\n                        0\n                      ]\n                    },\n                    {\n                      \"$eq\": [\n                        {\n                          \"$len\": {\n                            \"$ref\": \"request.videos\"\n                          }\n                        },\n                        0\n                      ]\n                    },\n                    {\n                      \"$eq\": [\n                        {\n                          \"$len\": {\n                            \"$ref\": \"request.audios\"\n                          }\n                        },\n                        0\n                      ]\n                    }\n                  ]\n                }\n              ]\n            },\n            \"message\": \"TSAI MiniMax H3 的首尾帧不能与普通参考图、参考视频或参考音频混用\"\n          },\n          {\n            \"assert\": {\n              \"$or\": [\n                {\n                  \"$eq\": [\n                    {\n                      \"$len\": {\n                        \"$ref\": \"request.audios\"\n                      }\n                    },\n                    0\n                  ]\n                },\n                {\n                  \"$gt\": [\n                    {\n                      \"$len\": {\n                        \"$ref\": \"request.images\"\n                      }\n                    },\n                    0\n                  ]\n                },\n                {\n                  \"$gt\": [\n                    {\n                      \"$len\": {\n                        \"$ref\": \"request.videos\"\n                      }\n                    },\n                    0\n                  ]\n                }\n              ]\n            },\n            \"message\": \"TSAI MiniMax H3 的参考音频必须与至少一个图片或视频参考素材同时使用\"\n          }\n        ],\n        \"create\": {\n          \"method\": \"POST\",\n          \"path\": \"/v1/videos/generations\",\n          \"contentType\": \"application/json\",\n          \"body\": {\n            \"$merge\": [\n              {\n                \"model\": {\n                  \"$ref\": \"request.model\"\n                },\n                \"prompt\": {\n                  \"$ref\": \"request.prompt\"\n                },\n                \"duration\": {\n                  \"$omitEmpty\": {\n                    \"$ref\": \"request.duration\"\n                  }\n                },\n                \"aspect_ratio\": {\n                  \"$omitEmpty\": {\n                    \"$ref\": \"request.aspectRatio\"\n                  }\n                },\n                \"resolution\": {\n                  \"$omitEmpty\": {\n                    \"$upper\": {\n                      \"$ref\": \"request.resolution\"\n                    }\n                  }\n                },\n                \"first_frame_image\": {\n                  \"$omitEmpty\": {\n                    \"$first\": {\n                      \"$map\": {\n                        \"from\": {\n                          \"$filter\": {\n                            \"from\": {\n                              \"$sortByOrder\": {\n                                \"$ref\": \"request.images\"\n                              }\n                            },\n                            \"as\": \"media\",\n                            \"where\": {\n                              \"$eq\": [\n                                {\n                                  \"$ref\": \"media.role\"\n                                },\n                                \"first_frame\"\n                              ]\n                            }\n                          }\n                        },\n                        \"as\": \"media\",\n                        \"in\": {\n                          \"$ref\": \"media.value\"\n                        }\n                      }\n                    }\n                  }\n                },\n                \"last_frame_image\": {\n                  \"$omitEmpty\": {\n                    \"$first\": {\n                      \"$map\": {\n                        \"from\": {\n                          \"$filter\": {\n                            \"from\": {\n                              \"$sortByOrder\": {\n                                \"$ref\": \"request.images\"\n                              }\n                            },\n                            \"as\": \"media\",\n                            \"where\": {\n                              \"$eq\": [\n                                {\n                                  \"$ref\": \"media.role\"\n                                },\n                                \"last_frame\"\n                              ]\n                            }\n                          }\n                        },\n                        \"as\": \"media\",\n                        \"in\": {\n                          \"$ref\": \"media.value\"\n                        }\n                      }\n                    }\n                  }\n                },\n                \"image_urls\": {\n                  \"$omitEmpty\": {\n                    \"$map\": {\n                      \"from\": {\n                        \"$filter\": {\n                          \"from\": {\n                            \"$sortByOrder\": {\n                              \"$ref\": \"request.images\"\n                            }\n                          },\n                          \"as\": \"media\",\n                          \"where\": {\n                            \"$and\": [\n                              {\n                                \"$ne\": [\n                                  {\n                                    \"$ref\": \"media.role\"\n                                  },\n                                  \"first_frame\"\n                                ]\n                              },\n                              {\n                                \"$ne\": [\n                                  {\n                                    \"$ref\": \"media.role\"\n                                  },\n                                  \"last_frame\"\n                                ]\n                              }\n                            ]\n                          }\n                        }\n                      },\n                      \"as\": \"media\",\n                      \"in\": {\n                        \"$ref\": \"media.value\"\n                      }\n                    }\n                  }\n                },\n                \"video_urls\": {\n                  \"$omitEmpty\": {\n                    \"$map\": {\n                      \"from\": {\n                        \"$sortByOrder\": {\n                          \"$ref\": \"request.videos\"\n                        }\n                      },\n                      \"as\": \"media\",\n                      \"in\": {\n                        \"$ref\": \"media.value\"\n                      }\n                    }\n                  }\n                },\n                \"audio_urls\": {\n                  \"$omitEmpty\": {\n                    \"$map\": {\n                      \"from\": {\n                        \"$sortByOrder\": {\n                          \"$ref\": \"request.audios\"\n                        }\n                      },\n                      \"as\": \"media\",\n                      \"in\": {\n                        \"$ref\": \"media.value\"\n                      }\n                    }\n                  }\n                },\n                \"num_outputs_per_prompt\": {\n                  \"$omitEmpty\": {\n                    \"$coalesce\": [\n                      {\n                        \"$ref\": \"request.output.count\"\n                      },\n                      {\n                        \"$ref\": \"request.imageCount\"\n                      }\n                    ]\n                  }\n                },\n                \"camera_motion\": {\n                  \"$omitEmpty\": {\n                    \"$ref\": \"request.extra.camera_motion\"\n                  }\n                },\n                \"seed\": {\n                  \"$omitEmpty\": {\n                    \"$ref\": \"request.extra.seed\"\n                  }\n                }\n              },\n              {\n                \"$coalesce\": [\n                  {\n                    \"$ref\": \"request.providerOptions.tsai-minimax-h3.body\"\n                  },\n                  {\n                    \"$ref\": \"request.providerOptions.tsai-minimax-h3.extra_body\"\n                  },\n                  {}\n                ]\n              }\n            ]\n          }\n        },\n        \"poll\": {\n          \"method\": \"GET\",\n          \"path\": \"/v1/videos/{{taskId}}\",\n          \"contentType\": \"application/json\"\n        },\n        \"response\": {\n          \"taskId\": {\n            \"$coalesce\": [\n              {\n                \"$ref\": \"response.data.0.task_id\"\n              },\n              {\n                \"$ref\": \"response.data.task_id\"\n              },\n              {\n                \"$ref\": \"response.data.id\"\n              },\n              {\n                \"$ref\": \"response.task_id\"\n              },\n              {\n                \"$ref\": \"response.id\"\n              },\n              {\n                \"$ref\": \"taskId\"\n              }\n            ]\n          },\n          \"status\": {\n            \"$coalesce\": [\n              {\n                \"$ref\": \"response.data.0.status\"\n              },\n              {\n                \"$ref\": \"response.data.status\"\n              },\n              {\n                \"$ref\": \"response.status\"\n              },\n              \"pending\"\n            ]\n          },\n          \"message\": {\n            \"$coalesce\": [\n              {\n                \"$ref\": \"response.data.error.message\"\n              },\n              {\n                \"$ref\": \"response.error.message\"\n              },\n              {\n                \"$ref\": \"response.message\"\n              },\n              {\n                \"$ref\": \"response.detail\"\n              }\n            ]\n          },\n          \"videos\": {\n            \"$coalesce\": [\n              {\n                \"$ref\": \"response.data.result.videos\"\n              },\n              {\n                \"$ref\": \"response.result.videos\"\n              }\n            ]\n          },\n          \"errorPaths\": [\n            \"error.code\",\n            \"data.error.code\"\n          ],\n          \"resultEphemeral\": false\n        }\n      },\n      {\n        \"id\": \"tsai-seedance-mini\",\n        \"label\": \"TSAI Seedance 2.0 / 2.0 mini 视频\",\n        \"capabilities\": [\n          \"video\"\n        ],\n        \"scopes\": [\n          \"admin.system-channel\",\n          \"user.custom-channel\",\n          \"canvas\",\n          \"creation\",\n          \"agent\"\n        ],\n        \"baseUrl\": \"https://api.alifenqi.com:8188\",\n        \"requiresPublicMediaUrls\": true,\n        \"auth\": {\n          \"type\": \"bearer\",\n          \"field\": \"apiKey\"\n        },\n        \"parameters\": [\n          {\n            \"name\": \"model\",\n            \"type\": \"string\",\n            \"required\": true,\n            \"mapping\": \"model\",\n            \"description\": \"视频模型 ID。\"\n          },\n          {\n            \"name\": \"prompt\",\n            \"type\": \"string\",\n            \"required\": true,\n            \"mapping\": \"prompt\",\n            \"description\": \"视频提示词。\"\n          },\n          {\n            \"name\": \"images\",\n            \"type\": \"media[]\",\n            \"required\": false,\n            \"mapping\": \"conditions[].uri\",\n            \"description\": \"按条件类型和 role 映射参考图、首帧与尾帧。\"\n          },\n          {\n            \"name\": \"videos\",\n            \"type\": \"media[]\",\n            \"required\": false,\n            \"mapping\": \"conditions[].uri\",\n            \"description\": \"参考视频。\"\n          },\n          {\n            \"name\": \"audios\",\n            \"type\": \"media[]\",\n            \"required\": false,\n            \"mapping\": \"conditions[].uri\",\n            \"description\": \"参考音频。\"\n          },\n          {\n            \"name\": \"duration\",\n            \"type\": \"integer\",\n            \"required\": false,\n            \"mapping\": \"duration\",\n            \"description\": \"时长秒数；具体支持规格以当前 Seedance 公开模型和渠道为准。\"\n          },\n          {\n            \"name\": \"aspectRatio\",\n            \"type\": \"string\",\n            \"required\": false,\n            \"mapping\": \"ratio\",\n            \"description\": \"画幅比例。\"\n          },\n          {\n            \"name\": \"resolution\",\n            \"type\": \"string\",\n            \"required\": false,\n            \"mapping\": \"resolution\",\n            \"description\": \"分辨率档位；具体支持规格以当前 Seedance 公开模型和渠道为准。\"\n          },\n          {\n            \"name\": \"generateAudio\",\n            \"type\": \"boolean\",\n            \"required\": false,\n            \"mapping\": \"generate_audio\",\n            \"description\": \"是否同时生成音频。\"\n          },\n          {\n            \"name\": \"providerOptions\",\n            \"type\": \"object\",\n            \"required\": false,\n            \"mapping\": \"provider-specific fields\",\n            \"description\": \"渠道扩展字段。\"\n          }\n        ],\n        \"validations\": [\n          {\n            \"assert\": {\n              \"$gt\": [\n                {\n                  \"$len\": {\n                    \"$trim\": {\n                      \"$ref\": \"request.prompt\"\n                    }\n                  }\n                },\n                0\n              ]\n            },\n            \"message\": \"TSAI Seedance 需要填写 prompt\"\n          },\n          {\n            \"assert\": {\n              \"$lte\": [\n                {\n                  \"$len\": {\n                    \"$ref\": \"request.prompt\"\n                  }\n                },\n                20000\n              ]\n            },\n            \"message\": \"TSAI Seedance 的 prompt 最多 20000 个字符\"\n          },\n          {\n            \"assert\": {\n              \"$lte\": [\n                {\n                  \"$len\": {\n                    \"$ref\": \"request.images\"\n                  }\n                },\n                9\n              ]\n            },\n            \"message\": \"TSAI Seedance 最多支持 9 张参考图片\"\n          },\n          {\n            \"assert\": {\n              \"$lte\": [\n                {\n                  \"$len\": {\n                    \"$ref\": \"request.videos\"\n                  }\n                },\n                3\n              ]\n            },\n            \"message\": \"TSAI Seedance 最多支持 3 个参考视频\"\n          },\n          {\n            \"assert\": {\n              \"$lte\": [\n                {\n                  \"$len\": {\n                    \"$ref\": \"request.audios\"\n                  }\n                },\n                3\n              ]\n            },\n            \"message\": \"TSAI Seedance 最多支持 3 个参考音频\"\n          },\n          {\n            \"assert\": {\n              \"$or\": [\n                {\n                  \"$and\": [\n                    {\n                      \"$eq\": [\n                        {\n                          \"$len\": {\n                            \"$filter\": {\n                              \"from\": {\n                                \"$sortByOrder\": {\n                                  \"$ref\": \"request.images\"\n                                }\n                              },\n                              \"as\": \"media\",\n                              \"where\": {\n                                \"$eq\": [\n                                  {\n                                    \"$ref\": \"media.role\"\n                                  },\n                                  \"first_frame\"\n                                ]\n                              }\n                            }\n                          }\n                        },\n                        0\n                      ]\n                    },\n                    {\n                      \"$eq\": [\n                        {\n                          \"$len\": {\n                            \"$filter\": {\n                              \"from\": {\n                                \"$sortByOrder\": {\n                                  \"$ref\": \"request.images\"\n                                }\n                              },\n                              \"as\": \"media\",\n                              \"where\": {\n                                \"$eq\": [\n                                  {\n                                    \"$ref\": \"media.role\"\n                                  },\n                                  \"last_frame\"\n                                ]\n                              }\n                            }\n                          }\n                        },\n                        0\n                      ]\n                    }\n                  ]\n                },\n                {\n                  \"$and\": [\n                    {\n                      \"$eq\": [\n                        {\n                          \"$len\": {\n                            \"$filter\": {\n                              \"from\": {\n                                \"$sortByOrder\": {\n                                  \"$ref\": \"request.images\"\n                                }\n                              },\n                              \"as\": \"media\",\n                              \"where\": {\n                                \"$and\": [\n                                  {\n                                    \"$ne\": [\n                                      {\n                                        \"$ref\": \"media.role\"\n                                      },\n                                      \"first_frame\"\n                                    ]\n                                  },\n                                  {\n                                    \"$ne\": [\n                                      {\n                                        \"$ref\": \"media.role\"\n                                      },\n                                      \"last_frame\"\n                                    ]\n                                  }\n                                ]\n                              }\n                            }\n                          }\n                        },\n                        0\n                      ]\n                    },\n                    {\n                      \"$eq\": [\n                        {\n                          \"$len\": {\n                            \"$ref\": \"request.videos\"\n                          }\n                        },\n                        0\n                      ]\n                    },\n                    {\n                      \"$eq\": [\n                        {\n                          \"$len\": {\n                            \"$ref\": \"request.audios\"\n                          }\n                        },\n                        0\n                      ]\n                    }\n                  ]\n                }\n              ]\n            },\n            \"message\": \"TSAI Seedance 的首尾帧不能与普通参考图、参考视频或参考音频混用\"\n          }\n        ],\n        \"create\": {\n          \"method\": \"POST\",\n          \"path\": \"/v1/videos/generations\",\n          \"contentType\": \"application/json\",\n          \"body\": {\n            \"$merge\": [\n              {\n                \"model\": {\n                  \"$ref\": \"request.model\"\n                },\n                \"prompt\": {\n                  \"$ref\": \"request.prompt\"\n                },\n                \"conditions\": {\n                  \"$omitEmpty\": {\n                    \"$map\": {\n                      \"from\": {\n                        \"$sortByOrder\": {\n                          \"$concatArrays\": [\n                            {\n                              \"$map\": {\n                                \"from\": {\n                                  \"$ref\": \"request.images\"\n                                },\n                                \"as\": \"media\",\n                                \"in\": {\n                                  \"kind\": \"image\",\n                                  \"value\": {\n                                    \"$ref\": \"media.value\"\n                                  },\n                                  \"role\": {\n                                    \"$switch\": {\n                                      \"cases\": [\n                                        {\n                                          \"when\": {\n                                            \"$eq\": [\n                                              {\n                                                \"$ref\": \"media.role\"\n                                              },\n                                              \"first_frame\"\n                                            ]\n                                          },\n                                          \"then\": \"first_frame\"\n                                        },\n                                        {\n                                          \"when\": {\n                                            \"$eq\": [\n                                              {\n                                                \"$ref\": \"media.role\"\n                                              },\n                                              \"last_frame\"\n                                            ]\n                                          },\n                                          \"then\": \"last_frame\"\n                                        }\n                                      ],\n                                      \"default\": \"reference\"\n                                    }\n                                  },\n                                  \"order\": {\n                                    \"$ref\": \"media.order\"\n                                  }\n                                }\n                              }\n                            },\n                            {\n                              \"$map\": {\n                                \"from\": {\n                                  \"$ref\": \"request.videos\"\n                                },\n                                \"as\": \"media\",\n                                \"in\": {\n                                  \"kind\": \"video\",\n                                  \"value\": {\n                                    \"$ref\": \"media.value\"\n                                  },\n                                  \"role\": \"reference\",\n                                  \"order\": {\n                                    \"$ref\": \"media.order\"\n                                  }\n                                }\n                              }\n                            },\n                            {\n                              \"$map\": {\n                                \"from\": {\n                                  \"$ref\": \"request.audios\"\n                                },\n                                \"as\": \"media\",\n                                \"in\": {\n                                  \"kind\": \"audio\",\n                                  \"value\": {\n                                    \"$ref\": \"media.value\"\n                                  },\n                                  \"role\": \"reference\",\n                                  \"order\": {\n                                    \"$ref\": \"media.order\"\n                                  }\n                                }\n                              }\n                            }\n                          ]\n                        }\n                      },\n                      \"as\": \"condition\",\n                      \"in\": {\n                        \"type\": {\n                          \"$ref\": \"condition.kind\"\n                        },\n                        \"uri\": {\n                          \"$ref\": \"condition.value\"\n                        },\n                        \"role\": {\n                          \"$ref\": \"condition.role\"\n                        }\n                      }\n                    }\n                  }\n                },\n                \"duration\": {\n                  \"$omitEmpty\": {\n                    \"$ref\": \"request.duration\"\n                  }\n                },\n                \"ratio\": {\n                  \"$omitEmpty\": {\n                    \"$ref\": \"request.aspectRatio\"\n                  }\n                },\n                \"resolution\": {\n                  \"$omitEmpty\": {\n                    \"$ref\": \"request.resolution\"\n                  }\n                },\n                \"generate_audio\": {\n                  \"$omitEmpty\": {\n                    \"$ref\": \"request.generateAudio\"\n                  }\n                },\n                \"seed\": {\n                  \"$omitEmpty\": {\n                    \"$ref\": \"request.extra.seed\"\n                  }\n                }\n              },\n              {\n                \"$coalesce\": [\n                  {\n                    \"$ref\": \"request.providerOptions.tsai-seedance-mini.body\"\n                  },\n                  {\n                    \"$ref\": \"request.providerOptions.tsai-seedance-mini.extra_body\"\n                  },\n                  {}\n                ]\n              }\n            ]\n          }\n        },\n        \"poll\": {\n          \"method\": \"GET\",\n          \"path\": \"/v1/videos/{{taskId}}\",\n          \"contentType\": \"application/json\"\n        },\n        \"response\": {\n          \"taskId\": {\n            \"$coalesce\": [\n              {\n                \"$ref\": \"response.data.0.task_id\"\n              },\n              {\n                \"$ref\": \"response.data.task_id\"\n              },\n              {\n                \"$ref\": \"response.data.id\"\n              },\n              {\n                \"$ref\": \"response.task_id\"\n              },\n              {\n                \"$ref\": \"response.id\"\n              },\n              {\n                \"$ref\": \"taskId\"\n              }\n            ]\n          },\n          \"status\": {\n            \"$coalesce\": [\n              {\n                \"$ref\": \"response.data.0.status\"\n              },\n              {\n                \"$ref\": \"response.data.status\"\n              },\n              {\n                \"$ref\": \"response.status\"\n              },\n              \"pending\"\n            ]\n          },\n          \"message\": {\n            \"$coalesce\": [\n              {\n                \"$ref\": \"response.data.error.message\"\n              },\n              {\n                \"$ref\": \"response.error.message\"\n              },\n              {\n                \"$ref\": \"response.message\"\n              },\n              {\n                \"$ref\": \"response.detail\"\n              }\n            ]\n          },\n          \"videos\": {\n            \"$coalesce\": [\n              {\n                \"$ref\": \"response.data.result.videos\"\n              },\n              {\n                \"$ref\": \"response.result.videos\"\n              }\n            ]\n          },\n          \"errorPaths\": [\n            \"error.code\",\n            \"data.error.code\"\n          ],\n          \"resultEphemeral\": false\n        }\n      },\n      {\n        \"id\": \"tsai-seedream\",\n        \"label\": \"TSAI Seedream 4.5 图片\",\n        \"capabilities\": [\n          \"image\"\n        ],\n        \"scopes\": [\n          \"admin.system-channel\",\n          \"user.custom-channel\",\n          \"canvas\",\n          \"creation\",\n          \"agent\"\n        ],\n        \"baseUrl\": \"https://api.alifenqi.com:8188\",\n        \"requiresPublicMediaUrls\": true,\n        \"auth\": {\n          \"type\": \"bearer\",\n          \"field\": \"apiKey\"\n        },\n        \"parameters\": [\n          {\n            \"name\": \"model\",\n            \"type\": \"string\",\n            \"required\": true,\n            \"mapping\": \"model\",\n            \"description\": \"图片模型 ID。\"\n          },\n          {\n            \"name\": \"prompt\",\n            \"type\": \"string\",\n            \"required\": true,\n            \"mapping\": \"prompt\",\n            \"description\": \"图片提示词。\"\n          },\n          {\n            \"name\": \"images\",\n            \"type\": \"media[]\",\n            \"required\": false,\n            \"mapping\": \"image\",\n            \"description\": \"单图或多参考图 URL，按提示词中的图1、图2顺序。\"\n          },\n          {\n            \"name\": \"imageCount\",\n            \"type\": \"integer\",\n            \"required\": false,\n            \"mapping\": \"n\",\n            \"description\": \"输出数量；本协议固定一张。\"\n          },\n          {\n            \"name\": \"aspectRatio\",\n            \"type\": \"string\",\n            \"required\": false,\n            \"mapping\": \"size\",\n            \"description\": \"2K、4K 或宽高像素。\"\n          },\n          {\n            \"name\": \"resolution\",\n            \"type\": \"string\",\n            \"required\": false,\n            \"mapping\": \"size\",\n            \"description\": \"分辨率档位，可映射到 size。\"\n          },\n          {\n            \"name\": \"quality\",\n            \"type\": \"string\",\n            \"required\": false,\n            \"mapping\": \"unused\",\n            \"description\": \"TSAI 图片不支持独立质量档。\"\n          },\n          {\n            \"name\": \"watermark\",\n            \"type\": \"boolean\",\n            \"required\": false,\n            \"mapping\": \"watermark\",\n            \"description\": \"是否添加水印，默认 true。\"\n          },\n          {\n            \"name\": \"providerOptions\",\n            \"type\": \"object\",\n            \"required\": false,\n            \"mapping\": \"provider-specific fields\",\n            \"description\": \"渠道扩展字段。\"\n          }\n        ],\n        \"validations\": [\n          {\n            \"assert\": {\n              \"$gt\": [\n                {\n                  \"$len\": {\n                    \"$trim\": {\n                      \"$ref\": \"request.prompt\"\n                    }\n                  }\n                },\n                0\n              ]\n            },\n            \"message\": \"TSAI Seedream 需要填写 prompt\"\n          },\n          {\n            \"assert\": {\n              \"$lte\": [\n                {\n                  \"$len\": {\n                    \"$ref\": \"request.prompt\"\n                  }\n                },\n                20000\n              ]\n            },\n            \"message\": \"TSAI Seedream 的 prompt 最多 20000 个字符\"\n          }\n        ],\n        \"create\": {\n          \"method\": \"POST\",\n          \"path\": \"/v1/images/generations\",\n          \"contentType\": \"application/json\",\n          \"body\": {\n            \"$merge\": [\n              {\n                \"model\": {\n                  \"$ref\": \"request.model\"\n                },\n                \"prompt\": {\n                  \"$ref\": \"request.prompt\"\n                },\n                \"size\": {\n                  \"$omitEmpty\": {\n                    \"$switch\": {\n                      \"cases\": [\n                        {\n                          \"when\": {\n                            \"$eq\": [\n                              {\n                                \"$lower\": {\n                                  \"$ref\": \"request.aspectRatio\"\n                                }\n                              },\n                              \"2k\"\n                            ]\n                          },\n                          \"then\": \"2K\"\n                        },\n                        {\n                          \"when\": {\n                            \"$eq\": [\n                              {\n                                \"$lower\": {\n                                  \"$ref\": \"request.aspectRatio\"\n                                }\n                              },\n                              \"4k\"\n                            ]\n                          },\n                          \"then\": \"4K\"\n                        },\n                        {\n                          \"when\": {\n                            \"$eq\": [\n                              {\n                                \"$lower\": {\n                                  \"$ref\": \"request.aspectRatio\"\n                                }\n                              },\n                              \"auto\"\n                            ]\n                          },\n                          \"then\": \"2K\"\n                        },\n                        {\n                          \"when\": {\n                            \"$eq\": [\n                              {\n                                \"$ref\": \"request.aspectRatio\"\n                              },\n                              \"1:1\"\n                            ]\n                          },\n                          \"then\": \"2048x2048\"\n                        },\n                        {\n                          \"when\": {\n                            \"$eq\": [\n                              {\n                                \"$ref\": \"request.aspectRatio\"\n                              },\n                              \"16:9\"\n                            ]\n                          },\n                          \"then\": \"2560x1440\"\n                        },\n                        {\n                          \"when\": {\n                            \"$eq\": [\n                              {\n                                \"$ref\": \"request.aspectRatio\"\n                              },\n                              \"9:16\"\n                            ]\n                          },\n                          \"then\": \"1440x2560\"\n                        },\n                        {\n                          \"when\": {\n                            \"$eq\": [\n                              {\n                                \"$ref\": \"request.aspectRatio\"\n                              },\n                              \"4:3\"\n                            ]\n                          },\n                          \"then\": \"2304x1728\"\n                        },\n                        {\n                          \"when\": {\n                            \"$eq\": [\n                              {\n                                \"$ref\": \"request.aspectRatio\"\n                              },\n                              \"3:4\"\n                            ]\n                          },\n                          \"then\": \"1728x2304\"\n                        },\n                        {\n                          \"when\": {\n                            \"$eq\": [\n                              {\n                                \"$ref\": \"request.aspectRatio\"\n                              },\n                              \"3:2\"\n                            ]\n                          },\n                          \"then\": \"2496x1664\"\n                        },\n                        {\n                          \"when\": {\n                            \"$eq\": [\n                              {\n                                \"$ref\": \"request.aspectRatio\"\n                              },\n                              \"2:3\"\n                            ]\n                          },\n                          \"then\": \"1664x2496\"\n                        },\n                        {\n                          \"when\": {\n                            \"$eq\": [\n                              {\n                                \"$ref\": \"request.aspectRatio\"\n                              },\n                              \"21:9\"\n                            ]\n                          },\n                          \"then\": \"3024x1296\"\n                        }\n                      ],\n                      \"default\": {\n                        \"$ref\": \"request.aspectRatio\"\n                      }\n                    }\n                  }\n                },\n                \"image\": {\n                  \"$omitEmpty\": {\n                    \"$if\": {\n                      \"condition\": {\n                        \"$eq\": [\n                          {\n                            \"$len\": {\n                              \"$ref\": \"request.images\"\n                            }\n                          },\n                          1\n                        ]\n                      },\n                      \"then\": {\n                        \"$first\": {\n                          \"$map\": {\n                            \"from\": {\n                              \"$sortByOrder\": {\n                                \"$ref\": \"request.images\"\n                              }\n                            },\n                            \"as\": \"media\",\n                            \"in\": {\n                              \"$ref\": \"media.value\"\n                            }\n                          }\n                        }\n                      },\n                      \"else\": {\n                        \"$map\": {\n                          \"from\": {\n                            \"$sortByOrder\": {\n                              \"$ref\": \"request.images\"\n                            }\n                          },\n                          \"as\": \"media\",\n                          \"in\": {\n                            \"$ref\": \"media.value\"\n                          }\n                        }\n                      }\n                    }\n                  }\n                },\n                \"sequential_image_generation\": \"disabled\",\n                \"response_format\": \"url\",\n                \"stream\": false,\n                \"watermark\": {\n                  \"$omitEmpty\": {\n                    \"$ref\": \"request.watermark\"\n                  }\n                }\n              },\n              {\n                \"$coalesce\": [\n                  {\n                    \"$ref\": \"request.providerOptions.tsai-seedream.body\"\n                  },\n                  {\n                    \"$ref\": \"request.providerOptions.tsai-seedream.extra_body\"\n                  },\n                  {}\n                ]\n              }\n            ]\n          }\n        },\n        \"poll\": {\n          \"method\": \"GET\",\n          \"path\": \"/v1/images/generations/{{taskId}}\",\n          \"contentType\": \"application/json\"\n        },\n        \"response\": {\n          \"taskId\": {\n            \"$coalesce\": [\n              {\n                \"$ref\": \"response.id\"\n              },\n              {\n                \"$ref\": \"taskId\"\n              }\n            ]\n          },\n          \"status\": {\n            \"$coalesce\": [\n              {\n                \"$ref\": \"response.status\"\n              },\n              \"succeeded\"\n            ]\n          },\n          \"message\": {\n            \"$coalesce\": [\n              {\n                \"$ref\": \"response.error.message\"\n              },\n              {\n                \"$ref\": \"response.message\"\n              }\n            ]\n          },\n          \"images\": {\n            \"$ref\": \"response.data\"\n          },\n          \"errorPaths\": [\n            \"error.code\"\n          ],\n          \"resultEphemeral\": false\n        }\n      }\n    ]\n  },\n  \"documentation\": \"<当前插件的完整 documentation，由 README.md 与 docs/interface.md 拼接而成；为避免 JSON 递归，此处不重复展开正文。>\"\n}\n```\n<!-- YINGCE_MANIFEST_CONTRACT_END -->\n"
+  "documentation": "# TSAI 统一协议插件\n\n该源码目录构建为一个版本化 `.yingce-plugin` 包，使用统一的 `yingce.plugin/v1` Manifest 和宿主声明式 Provider runtime。插件本身不执行 Web 代码；上游请求、鉴权、媒体公网 URL、任务轮询和结果保存由宿主处理。\n\n随应用自动注册的官方包使用保留插件 ID `tsai`。如果要在「插件管理」中手动上传，请使用 [uploadable/tsai-upload.yingce-plugin](../uploadable/tsai-upload.yingce-plugin)，它使用独立的插件和 Provider ID，不会覆盖内置记录。\n\n当前协议以 [TSAI API 文档](https://api.alifenqi.com:8188/app/#docs) 为准。渠道 Base URL 填 `https://api.alifenqi.com:8188`，不要重复添加 `/v1`。API Key 只填写在渠道密钥配置，不放入 Manifest、URL 或任务正文。\n\n插件版本：`1.3.0`。当前覆盖 `/v1/models` 中的对话、视频、图片和音频模型：\n\n- 对话：`deepseek-v4-flash`、`deepseek-v4-pro`，使用 `/v1/chat/completions`。\n- 视频：`seedance-2.0`、`doubao-seedance-2-0-fast-260128`、`doubao-seedance-2-0-mini-260615`、`MiniMax/MiniMax-H3`、`custom/wan3.0-video`，使用 `/v1/videos/generations` 和 `/v1/videos/{task_id}`。\n- 图片：`gpt-image-2`、`banana-2.1`、`doubao-seedream-4-5-251128`，使用 `/v1/images/generations` 和 `/v1/images/generations/{task_id}`。\n- 音频：`seed-audio`，使用 `/v1/audio/generations` 和 `/v1/audio/generations/{task_id}`。\n\n接口字段、枚举、响应与错误说明见 [docs/interface.md](docs/interface.md)。Seed Audio 的请求字段和查询路径按当前文档映射；查询响应没有公开示例，音频任务 ID、状态及结果字段采用多路径兼容映射，需用真实任务确认。\n\n---\n\n# TSAI 网关统一协议映射\n\n该包使用 `yingce.plugin/v1`，Manifest、权限、Provider、配置和版本属于同一个插件生命周期。Provider 只声明上游请求映射；宿主负责密钥、出站安全、媒体 URL、任务轮询与结果保存。包内不执行 Web 代码。\n\n## 插件与渠道配置\n\n- 插件 ID：`tsai`。\n- Provider：`tsai-chat`（对话）、`tsai-minimax-h3`（MiniMax H3 视频）、`tsai-seedance-mini`（Seedance 与 Wan 视频）、`tsai-seedream`（图片）、`tsai-seed-audio`（Seed Audio）。\n- Base URL：`https://api.alifenqi.com:8188`；不要重复填写 `/v1`。鉴权由渠道密钥配置提供 `Authorization: Bearer <apiKey>`。Manifest、URL、日志和任务正文不保存 API Key。\n- 文档来源：[TSAI API 文档](https://api.alifenqi.com:8188/app/#docs)。版本 `1.3.0`。\n\n## 相比 1.1.3 的接口变化\n\n1. MiniMax H3 从旧的首帧/尾帧、`image_urls`/`video_urls`/`audio_urls` 改为统一 `conditions[]`；比例字段从 `aspect_ratio` 改为 `ratio`。H3 分辨率按文档转为大写（`480P`、`768P`、`1080P`、`2K`）；`generate_audio` 仅在 true 时发送。\n2. Seedance Provider 覆盖 Seedance 2.0、2.0 Fast、2.0 mini 和 Wan 3.0，继续使用 `conditions[]`；Seedance/Wan 分辨率保留文档要求的小写（如 `480p`），不会转换成 `480P`。增加运镜、输出数量、水印和种子字段；显式 false 会保留。\n3. 图片 Provider 新增 GPT Image 2、Banana 2.1，并更新 Seedream 4.5 请求体：用独立的 `resolution`、`ratio`、`n`；删除旧的 `size` 像素推导、`sequential_image_generation`、`response_format` 和 `stream` 字段。\n4. 视频创建只使用平台任务 ID `data[0].task_id` 轮询；成功状态从 `data.status` 读取，结果从 `data.result.videos` 读取。\n5. 增加 Seed Audio 请求 Provider，映射文本、语速档位、最多 3 条参考音频或 1 张参考图片；参考音频和参考图片互斥。\n\n## 当前模型与端点\n\n| 能力 | 模型 ID | 创建 | 查询 |\n| --- | --- | --- | --- |\n| 对话 | `deepseek-v4-flash`、`deepseek-v4-pro` | `POST /v1/chat/completions` | 同步响应 |\n| 视频 | `seedance-2.0`、`doubao-seedance-2-0-fast-260128`、`doubao-seedance-2-0-mini-260615`、`MiniMax/MiniMax-H3`、`custom/wan3.0-video` | `POST /v1/videos/generations` | `GET /v1/videos/{task_id}` |\n| 图片 | `gpt-image-2`、`banana-2.1`、`doubao-seedream-4-5-251128` | `POST /v1/images/generations` | `GET /v1/images/generations/{task_id}` |\n| 音频 | `seed-audio` | `POST /v1/audio/generations` | `GET /v1/audio/generations/{task_id}` |\n\n## 字段映射与约束\n\n### 对话\n\n- `model`、`messages` 使用 OpenAI Chat Completions 结构；对话结果读取 `choices[0].message.content`（兼容 `choices[0].text`）。工具、结构化输出和流式参数按当前网关文档支持情况配置。\n\n### 视频\n\n| 统一请求字段 | 上游字段 | 规则 |\n| --- | --- | --- |\n| `model`、`prompt`、`duration` | 同名 | prompt 必填；duration 为秒数。|\n| `images`、`videos`、`audios` | `conditions[]` | 每项为 `{type, uri, role}`；首帧/尾帧映射为对应 role，其余素材为 reference。|\n| `aspectRatio` | `ratio` | 按模型枚举原样传递。|\n| `resolution` | `resolution` | Seedance/Wan 使用 `480p`/`720p`/`1080p` 等小写值；MiniMax 转为 `480P`/`768P`/`1080P`/`2K`。|\n| `generateAudio` | `generate_audio` | Seedance/Wan 发送 true/false；MiniMax 仅发送 true，false/未设置时省略。|\n| `numOutputsPerPrompt` | `num_outputs_per_prompt` | 使用输出数量设置。|\n| `cameraMotion`、`seed`、`watermark` | 同名 snake_case 字段 | 仅在宿主提供时发送；boolean false 保留。|\n\n视频创建返回 `data[0].task_id`，`submitted` 进入等待。查询状态可能为 `queued`、`processing`、`succeeded` 或 `failed`；成功视频 URL 从 `data.result.videos[].url` 读取。新增的 `execution_stage` 是阶段说明，不替代主状态。收到任务 ID 后只轮询，不要重新提交创建请求。\n\n### 图片\n\n- 请求字段为 `model`、`prompt`、`resolution`（`1k`/`2k`/`4k`，小写）、`ratio`、`n`、可选参考图 `image` 和 `watermark`。模型所支持的比例并不完全相同；以相应模型文档为准。\n- 单张参考图发送 URL 字符串，多张发送字符串数组。素材 URL 由宿主转换为短期公网可下载地址。\n- 同步成功响应使用 `data[].url`。长任务可能返回 HTTP 202 和 `id/status`，再请求 `GET /v1/images/generations/{task_id}`；不会重复提交。\n\n### 音频\n\n- Provider：`tsai-seed-audio`；模型字段固定使用 `seed-audio`。`prompt` 必填，`speech_rate` 可选，只接受 `0`、`20`、`40`、`60`、`80`、`100` 档位；0 为默认档，不是速度倍率。\n- 参考素材使用 `reference_audio` URL 数组（最多 3 条）或 `reference_image` URL 数组（最多 1 张），二者不能同时传。素材 URL 由宿主转换为短期公网可下载地址。\n- 创建与查询路径分别为 `POST /v1/audio/generations` 和 `GET /v1/audio/generations/{task_id}`，建议每 3–10 秒查询。\n- 文档没有提供音频创建/查询的 JSON 响应示例。Manifest 暂用兼容路径提取 `data[0].task_id` / `task_id` / `id`、`status`，以及 `audio_url`、`url`、`audios` 等常见音频结果字段；结果按短期 URL 处理并由宿主下载保存。以上响应字段尚未用真实任务确认。\n\n## 轮询、结果和错误\n\n- 图片、视频与音频查询响应支持 `queued/submitted`（等待）、`processing`（处理中）、`succeeded/completed`（成功）和 `failed/error/cancelled`（失败）状态归一。视频结果读取 `data.result.videos`；图片结果读取 `data`。视频和图片文档标注为稳定结果地址，Manifest 将 `resultEphemeral` 设为 false；Seed Audio 响应格式未公开，按短期音频 URL 处理。\n- 接口文档建议约 3–10 秒查询一次任务。平台状态中的排队/保存/核验阶段用于展示进度，不能代替 `status`。\n- HTTP 400/422 表示参数或模型校验拒绝；401/403 是鉴权或权限问题；402 是额度不足；404 是模型或资源不可访问；409 是幂等键冲突；413 是上传大小限制；429 是限流；502/503/504 是上游服务异常。错误响应按错误字段呈现，不将无任务 ID 的请求自动重放。\n\n## 扩展字段\n\n各 Provider 的 `providerOptions.<provider-id>.body` / `extra_body` 可传当前接口确实支持的扩展字段。不要将 API Key、Cookie、回调密钥或任意网页脚本放入扩展请求体。\n\n<!-- YINGCE_MANIFEST_CONTRACT_START -->\n## Manifest 完整接口定义\n\n以下 JSON 与插件包内实际 `manifest.json` 逐字段一致，覆盖插件身份、权限、配置、鉴权、参数、校验、创建、Agent、查询、取消、结果下载、响应和 Agent 响应映射。`documentation` 字段的值就是当前完整文档；为避免文档在自身内部无限递归，JSON 中仅用等义占位文本表示正文。\n\n```json\n{\n  \"apiVersion\": \"yingce.plugin/v1\",\n  \"id\": \"tsai\",\n  \"name\": \"TSAI 网关\",\n  \"version\": \"1.3.0\",\n  \"author\": \"TSAI / 影策\",\n  \"description\": \"TSAI 对话、Seedance 2.0 系列与 Wan 3.0 视频、MiniMax H3、GPT Image 2 / Banana 2.1 / Seedream 4.5 图片和 Seed Audio 音频的声明式系统协议。\",\n  \"enabled\": true,\n  \"installable\": true,\n  \"permissions\": [\n    \"generation.run\",\n    \"media.read\"\n  ],\n  \"configuration\": {\n    \"fields\": [\n      {\n        \"name\": \"apiKey\",\n        \"type\": \"secret\",\n        \"label\": \"API Key\",\n        \"required\": true\n      }\n    ]\n  },\n  \"contributes\": {\n    \"providers\": [\n      {\n        \"id\": \"tsai-chat\",\n        \"label\": \"TSAI 通用对话\",\n        \"capabilities\": [\n          \"text\"\n        ],\n        \"scopes\": [\n          \"admin.system-channel\",\n          \"user.custom-channel\",\n          \"canvas\",\n          \"creation\",\n          \"agent\"\n        ],\n        \"baseUrl\": \"https://api.alifenqi.com:8188\",\n        \"requiresPublicMediaUrls\": false,\n        \"auth\": {\n          \"type\": \"bearer\",\n          \"field\": \"apiKey\"\n        },\n        \"parameters\": [\n          {\n            \"name\": \"model\",\n            \"type\": \"string\",\n            \"required\": true,\n            \"mapping\": \"model\",\n            \"description\": \"对话模型 ID。\"\n          },\n          {\n            \"name\": \"messages\",\n            \"type\": \"message[]\",\n            \"required\": true,\n            \"mapping\": \"provider message container\",\n            \"description\": \"包含历史消息和当前用户输入。\"\n          },\n          {\n            \"name\": \"instructions\",\n            \"type\": \"string\",\n            \"required\": false,\n            \"mapping\": \"system/instructions\",\n            \"description\": \"系统指令。\"\n          },\n          {\n            \"name\": \"temperature\",\n            \"type\": \"number\",\n            \"required\": false,\n            \"mapping\": \"temperature\",\n            \"description\": \"采样温度。\"\n          },\n          {\n            \"name\": \"top_p\",\n            \"type\": \"number\",\n            \"required\": false,\n            \"mapping\": \"top_p\",\n            \"description\": \"核采样参数。\"\n          },\n          {\n            \"name\": \"max_tokens\",\n            \"type\": \"integer\",\n            \"required\": false,\n            \"mapping\": \"max_tokens\",\n            \"description\": \"最大输出 token。\"\n          },\n          {\n            \"name\": \"tools\",\n            \"type\": \"array\",\n            \"required\": false,\n            \"mapping\": \"tools\",\n            \"description\": \"工具定义。\"\n          },\n          {\n            \"name\": \"tool_choice\",\n            \"type\": \"object|string\",\n            \"required\": false,\n            \"mapping\": \"tool_choice\",\n            \"description\": \"工具选择策略。\"\n          },\n          {\n            \"name\": \"response_format\",\n            \"type\": \"object\",\n            \"required\": false,\n            \"mapping\": \"response_format\",\n            \"description\": \"结构化输出配置。\"\n          },\n          {\n            \"name\": \"stream\",\n            \"type\": \"boolean\",\n            \"required\": false,\n            \"mapping\": \"stream\",\n            \"description\": \"流式开关；后台任务当前以最终响应归一。\"\n          },\n          {\n            \"name\": \"providerOptions\",\n            \"type\": \"object\",\n            \"required\": false,\n            \"mapping\": \"provider-specific fields\",\n            \"description\": \"渠道扩展字段。\"\n          }\n        ],\n        \"create\": {\n          \"method\": \"POST\",\n          \"path\": \"/v1/chat/completions\",\n          \"contentType\": \"application/json\",\n          \"body\": {\n            \"$merge\": [\n              {\n                \"model\": {\n                  \"$ref\": \"request.model\"\n                },\n                \"messages\": {\n                  \"$ref\": \"request.messages\"\n                },\n                \"temperature\": {\n                  \"$omitEmpty\": {\n                    \"$ref\": \"request.providerOptions.tsai-chat.temperature\"\n                  }\n                },\n                \"top_p\": {\n                  \"$omitEmpty\": {\n                    \"$ref\": \"request.providerOptions.tsai-chat.top_p\"\n                  }\n                },\n                \"max_tokens\": {\n                  \"$omitEmpty\": {\n                    \"$coalesce\": [\n                      {\n                        \"$ref\": \"request.extra.max_tokens\"\n                      },\n                      {\n                        \"$ref\": \"request.providerOptions.tsai-chat.max_tokens\"\n                      }\n                    ]\n                  }\n                },\n                \"thinking\": {\n                  \"$omitEmpty\": {\n                    \"$ref\": \"request.providerOptions.tsai-chat.thinking\"\n                  }\n                },\n                \"tools\": {\n                  \"$omitEmpty\": {\n                    \"$ref\": \"request.providerOptions.tsai-chat.tools\"\n                  }\n                },\n                \"tool_choice\": {\n                  \"$omitEmpty\": {\n                    \"$ref\": \"request.providerOptions.tsai-chat.tool_choice\"\n                  }\n                },\n                \"response_format\": {\n                  \"$omitEmpty\": {\n                    \"$ref\": \"request.providerOptions.tsai-chat.response_format\"\n                  }\n                },\n                \"stream\": {\n                  \"$omitEmpty\": {\n                    \"$ref\": \"request.providerOptions.tsai-chat.stream\"\n                  }\n                }\n              },\n              {\n                \"$coalesce\": [\n                  {\n                    \"$ref\": \"request.providerOptions.tsai-chat.body\"\n                  },\n                  {\n                    \"$ref\": \"request.providerOptions.tsai-chat.extra_body\"\n                  },\n                  {}\n                ]\n              }\n            ]\n          }\n        },\n        \"agent\": {\n          \"method\": \"POST\",\n          \"path\": \"/v1/chat/completions\",\n          \"contentType\": \"application/json\",\n          \"body\": {\n            \"$merge\": [\n              {\n                \"$ref\": \"request.extra.agent.chatCompletion\"\n              },\n              {\n                \"model\": {\n                  \"$ref\": \"request.model\"\n                }\n              }\n            ]\n          }\n        },\n        \"response\": {\n          \"status\": \"succeeded\",\n          \"textPaths\": [\n            \"choices.0.message.content\",\n            \"choices.0.text\"\n          ],\n          \"reasoningPaths\": [\n            \"choices.0.message.reasoning_content\"\n          ],\n          \"usage\": {\n            \"$ref\": \"response.usage\"\n          },\n          \"errorPaths\": [\n            \"error.code\"\n          ],\n          \"messagePaths\": [\n            \"error.message\"\n          ]\n        },\n        \"agentResponse\": {\n          \"textPaths\": [\n            \"choices.0.message.content\",\n            \"choices.0.text\"\n          ],\n          \"reasoningPaths\": [\n            \"choices.0.message.reasoning_content\"\n          ],\n          \"toolCallsPath\": \"choices.0.message.tool_calls\",\n          \"toolCallIdPaths\": [\n            \"id\"\n          ],\n          \"toolCallNamePaths\": [\n            \"function.name\"\n          ],\n          \"toolCallArgumentsPaths\": [\n            \"function.arguments\"\n          ]\n        }\n      },\n      {\n        \"id\": \"tsai-minimax-h3\",\n        \"label\": \"TSAI MiniMax H3 视频\",\n        \"capabilities\": [\n          \"video\"\n        ],\n        \"scopes\": [\n          \"admin.system-channel\",\n          \"user.custom-channel\",\n          \"canvas\",\n          \"creation\",\n          \"agent\"\n        ],\n        \"baseUrl\": \"https://api.alifenqi.com:8188\",\n        \"requiresPublicMediaUrls\": true,\n        \"auth\": {\n          \"type\": \"bearer\",\n          \"field\": \"apiKey\"\n        },\n        \"parameters\": [\n          {\n            \"name\": \"model\",\n            \"type\": \"string\",\n            \"required\": true,\n            \"mapping\": \"model\",\n            \"description\": \"视频模型 ID。\"\n          },\n          {\n            \"name\": \"prompt\",\n            \"type\": \"string\",\n            \"required\": true,\n            \"mapping\": \"prompt\",\n            \"description\": \"视频提示词。\"\n          },\n          {\n            \"name\": \"images\",\n            \"type\": \"media[]\",\n            \"required\": false,\n            \"mapping\": \"conditions[].uri\",\n            \"description\": \"图片参考素材；与视频、音频统一映射到 conditions。\"\n          },\n          {\n            \"name\": \"videos\",\n            \"type\": \"media[]\",\n            \"required\": false,\n            \"mapping\": \"conditions[].uri\",\n            \"description\": \"视频参考素材；映射到 conditions。\"\n          },\n          {\n            \"name\": \"audios\",\n            \"type\": \"media[]\",\n            \"required\": false,\n            \"mapping\": \"conditions[].uri\",\n            \"description\": \"音频参考素材；映射到 conditions。\"\n          },\n          {\n            \"name\": \"duration\",\n            \"type\": \"integer\",\n            \"required\": false,\n            \"mapping\": \"duration\",\n            \"description\": \"时长秒数，默认 5，支持 4–15 秒。\"\n          },\n          {\n            \"name\": \"aspectRatio\",\n            \"type\": \"string\",\n            \"required\": false,\n            \"mapping\": \"ratio\",\n            \"description\": \"画幅比例，例如 16:9。\"\n          },\n          {\n            \"name\": \"resolution\",\n            \"type\": \"string\",\n            \"required\": false,\n            \"mapping\": \"resolution\",\n            \"description\": \"分辨率；上游枚举使用大写，如 480P、768P、1080P、2K。\"\n          },\n          {\n            \"name\": \"generateAudio\",\n            \"type\": \"boolean\",\n            \"required\": false,\n            \"mapping\": \"generate_audio\",\n            \"description\": \"仅当为 true 时发送；false 或未设置时省略。\"\n          },\n          {\n            \"name\": \"numOutputsPerPrompt\",\n            \"type\": \"integer\",\n            \"required\": false,\n            \"mapping\": \"num_outputs_per_prompt\",\n            \"description\": \"单次输出数量。\"\n          },\n          {\n            \"name\": \"cameraMotion\",\n            \"type\": \"string\",\n            \"required\": false,\n            \"mapping\": \"camera_motion\",\n            \"description\": \"平台定义的运镜提示。\"\n          },\n          {\n            \"name\": \"seed\",\n            \"type\": \"integer\",\n            \"required\": false,\n            \"mapping\": \"seed\",\n            \"description\": \"固定随机种子。\"\n          },\n          {\n            \"name\": \"providerOptions\",\n            \"type\": \"object\",\n            \"required\": false,\n            \"mapping\": \"provider-specific fields\",\n            \"description\": \"渠道扩展字段。\"\n          },\n          {\n            \"name\": \"watermark\",\n            \"type\": \"boolean\",\n            \"required\": false,\n            \"mapping\": \"watermark\",\n            \"description\": \"水印开关；显式 false 会保留。\"\n          }\n        ],\n        \"validations\": [\n          {\n            \"assert\": {\n              \"$gt\": [\n                {\n                  \"$len\": {\n                    \"$trim\": {\n                      \"$ref\": \"request.prompt\"\n                    }\n                  }\n                },\n                0\n              ]\n            },\n            \"message\": \"TSAI MiniMax H3 需要填写 prompt\"\n          },\n          {\n            \"assert\": {\n              \"$lte\": [\n                {\n                  \"$len\": {\n                    \"$ref\": \"request.prompt\"\n                  }\n                },\n                7000\n              ]\n            },\n            \"message\": \"TSAI MiniMax H3 的 prompt 最多 7000 个字符\"\n          },\n          {\n            \"assert\": {\n              \"$lte\": [\n                {\n                  \"$len\": {\n                    \"$ref\": \"request.images\"\n                  }\n                },\n                9\n              ]\n            },\n            \"message\": \"TSAI MiniMax H3 最多支持 9 张参考图片\"\n          },\n          {\n            \"assert\": {\n              \"$lte\": [\n                {\n                  \"$len\": {\n                    \"$ref\": \"request.videos\"\n                  }\n                },\n                3\n              ]\n            },\n            \"message\": \"TSAI MiniMax H3 最多支持 3 个参考视频\"\n          },\n          {\n            \"assert\": {\n              \"$lte\": [\n                {\n                  \"$len\": {\n                    \"$ref\": \"request.audios\"\n                  }\n                },\n                3\n              ]\n            },\n            \"message\": \"TSAI MiniMax H3 最多支持 3 个参考音频\"\n          },\n          {\n            \"assert\": {\n              \"$or\": [\n                {\n                  \"$and\": [\n                    {\n                      \"$eq\": [\n                        {\n                          \"$len\": {\n                            \"$filter\": {\n                              \"from\": {\n                                \"$sortByOrder\": {\n                                  \"$ref\": \"request.images\"\n                                }\n                              },\n                              \"as\": \"media\",\n                              \"where\": {\n                                \"$eq\": [\n                                  {\n                                    \"$ref\": \"media.role\"\n                                  },\n                                  \"first_frame\"\n                                ]\n                              }\n                            }\n                          }\n                        },\n                        0\n                      ]\n                    },\n                    {\n                      \"$eq\": [\n                        {\n                          \"$len\": {\n                            \"$filter\": {\n                              \"from\": {\n                                \"$sortByOrder\": {\n                                  \"$ref\": \"request.images\"\n                                }\n                              },\n                              \"as\": \"media\",\n                              \"where\": {\n                                \"$eq\": [\n                                  {\n                                    \"$ref\": \"media.role\"\n                                  },\n                                  \"last_frame\"\n                                ]\n                              }\n                            }\n                          }\n                        },\n                        0\n                      ]\n                    }\n                  ]\n                },\n                {\n                  \"$and\": [\n                    {\n                      \"$eq\": [\n                        {\n                          \"$len\": {\n                            \"$filter\": {\n                              \"from\": {\n                                \"$sortByOrder\": {\n                                  \"$ref\": \"request.images\"\n                                }\n                              },\n                              \"as\": \"media\",\n                              \"where\": {\n                                \"$and\": [\n                                  {\n                                    \"$ne\": [\n                                      {\n                                        \"$ref\": \"media.role\"\n                                      },\n                                      \"first_frame\"\n                                    ]\n                                  },\n                                  {\n                                    \"$ne\": [\n                                      {\n                                        \"$ref\": \"media.role\"\n                                      },\n                                      \"last_frame\"\n                                    ]\n                                  }\n                                ]\n                              }\n                            }\n                          }\n                        },\n                        0\n                      ]\n                    },\n                    {\n                      \"$eq\": [\n                        {\n                          \"$len\": {\n                            \"$ref\": \"request.videos\"\n                          }\n                        },\n                        0\n                      ]\n                    },\n                    {\n                      \"$eq\": [\n                        {\n                          \"$len\": {\n                            \"$ref\": \"request.audios\"\n                          }\n                        },\n                        0\n                      ]\n                    }\n                  ]\n                }\n              ]\n            },\n            \"message\": \"TSAI MiniMax H3 的首尾帧不能与普通参考图、参考视频或参考音频混用\"\n          },\n          {\n            \"assert\": {\n              \"$or\": [\n                {\n                  \"$eq\": [\n                    {\n                      \"$len\": {\n                        \"$ref\": \"request.audios\"\n                      }\n                    },\n                    0\n                  ]\n                },\n                {\n                  \"$gt\": [\n                    {\n                      \"$len\": {\n                        \"$ref\": \"request.images\"\n                      }\n                    },\n                    0\n                  ]\n                },\n                {\n                  \"$gt\": [\n                    {\n                      \"$len\": {\n                        \"$ref\": \"request.videos\"\n                      }\n                    },\n                    0\n                  ]\n                }\n              ]\n            },\n            \"message\": \"TSAI MiniMax H3 的参考音频必须与至少一个图片或视频参考素材同时使用\"\n          }\n        ],\n        \"create\": {\n          \"method\": \"POST\",\n          \"path\": \"/v1/videos/generations\",\n          \"contentType\": \"application/json\",\n          \"body\": {\n            \"$merge\": [\n              {\n                \"model\": {\n                  \"$ref\": \"request.model\"\n                },\n                \"prompt\": {\n                  \"$ref\": \"request.prompt\"\n                },\n                \"duration\": {\n                  \"$omitEmpty\": {\n                    \"$ref\": \"request.duration\"\n                  }\n                },\n                \"ratio\": {\n                  \"$omitEmpty\": {\n                    \"$ref\": \"request.aspectRatio\"\n                  }\n                },\n                \"resolution\": {\n                  \"$omitEmpty\": {\n                    \"$upper\": {\n                      \"$ref\": \"request.resolution\"\n                    }\n                  }\n                },\n                \"conditions\": {\n                  \"$omitEmpty\": {\n                    \"$map\": {\n                      \"from\": {\n                        \"$sortByOrder\": {\n                          \"$concatArrays\": [\n                            {\n                              \"$map\": {\n                                \"from\": {\n                                  \"$ref\": \"request.images\"\n                                },\n                                \"as\": \"media\",\n                                \"in\": {\n                                  \"kind\": \"image\",\n                                  \"value\": {\n                                    \"$ref\": \"media.value\"\n                                  },\n                                  \"role\": {\n                                    \"$switch\": {\n                                      \"cases\": [\n                                        {\n                                          \"when\": {\n                                            \"$eq\": [\n                                              {\n                                                \"$ref\": \"media.role\"\n                                              },\n                                              \"first_frame\"\n                                            ]\n                                          },\n                                          \"then\": \"first_frame\"\n                                        },\n                                        {\n                                          \"when\": {\n                                            \"$eq\": [\n                                              {\n                                                \"$ref\": \"media.role\"\n                                              },\n                                              \"last_frame\"\n                                            ]\n                                          },\n                                          \"then\": \"last_frame\"\n                                        }\n                                      ],\n                                      \"default\": \"reference\"\n                                    }\n                                  },\n                                  \"order\": {\n                                    \"$ref\": \"media.order\"\n                                  }\n                                }\n                              }\n                            },\n                            {\n                              \"$map\": {\n                                \"from\": {\n                                  \"$ref\": \"request.videos\"\n                                },\n                                \"as\": \"media\",\n                                \"in\": {\n                                  \"kind\": \"video\",\n                                  \"value\": {\n                                    \"$ref\": \"media.value\"\n                                  },\n                                  \"role\": \"reference\",\n                                  \"order\": {\n                                    \"$ref\": \"media.order\"\n                                  }\n                                }\n                              }\n                            },\n                            {\n                              \"$map\": {\n                                \"from\": {\n                                  \"$ref\": \"request.audios\"\n                                },\n                                \"as\": \"media\",\n                                \"in\": {\n                                  \"kind\": \"audio\",\n                                  \"value\": {\n                                    \"$ref\": \"media.value\"\n                                  },\n                                  \"role\": \"reference\",\n                                  \"order\": {\n                                    \"$ref\": \"media.order\"\n                                  }\n                                }\n                              }\n                            }\n                          ]\n                        }\n                      },\n                      \"as\": \"condition\",\n                      \"in\": {\n                        \"type\": {\n                          \"$ref\": \"condition.kind\"\n                        },\n                        \"uri\": {\n                          \"$ref\": \"condition.value\"\n                        },\n                        \"role\": {\n                          \"$ref\": \"condition.role\"\n                        }\n                      }\n                    }\n                  }\n                },\n                \"generate_audio\": {\n                  \"$if\": {\n                    \"condition\": {\n                      \"$eq\": [\n                        {\n                          \"$ref\": \"request.generateAudio\"\n                        },\n                        true\n                      ]\n                    },\n                    \"then\": true,\n                    \"else\": null\n                  }\n                },\n                \"num_outputs_per_prompt\": {\n                  \"$omitEmpty\": {\n                    \"$coalesce\": [\n                      {\n                        \"$ref\": \"request.output.count\"\n                      },\n                      {\n                        \"$ref\": \"request.imageCount\"\n                      }\n                    ]\n                  }\n                },\n                \"camera_motion\": {\n                  \"$omitEmpty\": {\n                    \"$ref\": \"request.extra.camera_motion\"\n                  }\n                },\n                \"seed\": {\n                  \"$omitEmpty\": {\n                    \"$ref\": \"request.extra.seed\"\n                  }\n                },\n                \"watermark\": {\n                  \"$ref\": \"request.watermark\"\n                }\n              },\n              {\n                \"$coalesce\": [\n                  {\n                    \"$ref\": \"request.providerOptions.tsai-minimax-h3.body\"\n                  },\n                  {\n                    \"$ref\": \"request.providerOptions.tsai-minimax-h3.extra_body\"\n                  },\n                  {}\n                ]\n              }\n            ]\n          }\n        },\n        \"poll\": {\n          \"method\": \"GET\",\n          \"path\": \"/v1/videos/{{taskId}}\",\n          \"contentType\": \"application/json\"\n        },\n        \"response\": {\n          \"taskId\": {\n            \"$coalesce\": [\n              {\n                \"$ref\": \"response.data.0.task_id\"\n              },\n              {\n                \"$ref\": \"response.data.task_id\"\n              },\n              {\n                \"$ref\": \"response.task_id\"\n              },\n              {\n                \"$ref\": \"taskId\"\n              }\n            ]\n          },\n          \"status\": {\n            \"$coalesce\": [\n              {\n                \"$ref\": \"response.data.0.status\"\n              },\n              {\n                \"$ref\": \"response.data.status\"\n              },\n              {\n                \"$ref\": \"response.status\"\n              },\n              \"pending\"\n            ]\n          },\n          \"message\": {\n            \"$coalesce\": [\n              {\n                \"$ref\": \"response.data.error.message\"\n              },\n              {\n                \"$ref\": \"response.data.message\"\n              },\n              {\n                \"$ref\": \"response.error.message\"\n              },\n              {\n                \"$ref\": \"response.message\"\n              },\n              {\n                \"$ref\": \"response.detail\"\n              }\n            ]\n          },\n          \"videos\": {\n            \"$coalesce\": [\n              {\n                \"$ref\": \"response.data.result.videos\"\n              },\n              {\n                \"$ref\": \"response.result.videos\"\n              }\n            ]\n          },\n          \"errorPaths\": [\n            \"error.code\",\n            \"data.error.code\"\n          ],\n          \"resultEphemeral\": false\n        }\n      },\n      {\n        \"id\": \"tsai-seedance-mini\",\n        \"label\": \"TSAI Seedance 2.0 系列 / Wan 3.0 视频\",\n        \"capabilities\": [\n          \"video\"\n        ],\n        \"scopes\": [\n          \"admin.system-channel\",\n          \"user.custom-channel\",\n          \"canvas\",\n          \"creation\",\n          \"agent\"\n        ],\n        \"baseUrl\": \"https://api.alifenqi.com:8188\",\n        \"requiresPublicMediaUrls\": true,\n        \"auth\": {\n          \"type\": \"bearer\",\n          \"field\": \"apiKey\"\n        },\n        \"parameters\": [\n          {\n            \"name\": \"model\",\n            \"type\": \"string\",\n            \"required\": true,\n            \"mapping\": \"model\",\n            \"description\": \"视频模型 ID。\"\n          },\n          {\n            \"name\": \"prompt\",\n            \"type\": \"string\",\n            \"required\": true,\n            \"mapping\": \"prompt\",\n            \"description\": \"视频提示词。\"\n          },\n          {\n            \"name\": \"images\",\n            \"type\": \"media[]\",\n            \"required\": false,\n            \"mapping\": \"conditions[].uri\",\n            \"description\": \"按条件类型和 role 映射参考图、首帧与尾帧。\"\n          },\n          {\n            \"name\": \"videos\",\n            \"type\": \"media[]\",\n            \"required\": false,\n            \"mapping\": \"conditions[].uri\",\n            \"description\": \"参考视频。\"\n          },\n          {\n            \"name\": \"audios\",\n            \"type\": \"media[]\",\n            \"required\": false,\n            \"mapping\": \"conditions[].uri\",\n            \"description\": \"参考音频。\"\n          },\n          {\n            \"name\": \"duration\",\n            \"type\": \"integer\",\n            \"required\": false,\n            \"mapping\": \"duration\",\n            \"description\": \"时长秒数；具体支持规格以当前 Seedance 公开模型和渠道为准。\"\n          },\n          {\n            \"name\": \"aspectRatio\",\n            \"type\": \"string\",\n            \"required\": false,\n            \"mapping\": \"ratio\",\n            \"description\": \"画幅比例。\"\n          },\n          {\n            \"name\": \"resolution\",\n            \"type\": \"string\",\n            \"required\": false,\n            \"mapping\": \"resolution\",\n            \"description\": \"保留上游大小写；Seedance 与 Wan 使用 480p、720p、1080p。\"\n          },\n          {\n            \"name\": \"generateAudio\",\n            \"type\": \"boolean\",\n            \"required\": false,\n            \"mapping\": \"generate_audio\",\n            \"description\": \"是否生成音频；显式 false 也发送。\"\n          },\n          {\n            \"name\": \"providerOptions\",\n            \"type\": \"object\",\n            \"required\": false,\n            \"mapping\": \"provider-specific fields\",\n            \"description\": \"渠道扩展字段。\"\n          },\n          {\n            \"name\": \"numOutputsPerPrompt\",\n            \"type\": \"integer\",\n            \"required\": false,\n            \"mapping\": \"num_outputs_per_prompt\",\n            \"description\": \"单次输出数量。\"\n          },\n          {\n            \"name\": \"cameraMotion\",\n            \"type\": \"string\",\n            \"required\": false,\n            \"mapping\": \"camera_motion\",\n            \"description\": \"平台定义的运镜提示。\"\n          },\n          {\n            \"name\": \"seed\",\n            \"type\": \"integer\",\n            \"required\": false,\n            \"mapping\": \"seed\",\n            \"description\": \"固定随机种子。\"\n          },\n          {\n            \"name\": \"watermark\",\n            \"type\": \"boolean\",\n            \"required\": false,\n            \"mapping\": \"watermark\",\n            \"description\": \"是否添加水印；显式 false 也发送。\"\n          }\n        ],\n        \"validations\": [\n          {\n            \"assert\": {\n              \"$gt\": [\n                {\n                  \"$len\": {\n                    \"$trim\": {\n                      \"$ref\": \"request.prompt\"\n                    }\n                  }\n                },\n                0\n              ]\n            },\n            \"message\": \"TSAI Seedance 需要填写 prompt\"\n          },\n          {\n            \"assert\": {\n              \"$lte\": [\n                {\n                  \"$len\": {\n                    \"$ref\": \"request.prompt\"\n                  }\n                },\n                20000\n              ]\n            },\n            \"message\": \"TSAI Seedance 的 prompt 最多 20000 个字符\"\n          },\n          {\n            \"assert\": {\n              \"$lte\": [\n                {\n                  \"$len\": {\n                    \"$ref\": \"request.images\"\n                  }\n                },\n                9\n              ]\n            },\n            \"message\": \"TSAI Seedance 最多支持 9 张参考图片\"\n          },\n          {\n            \"assert\": {\n              \"$lte\": [\n                {\n                  \"$len\": {\n                    \"$ref\": \"request.videos\"\n                  }\n                },\n                3\n              ]\n            },\n            \"message\": \"TSAI Seedance 最多支持 3 个参考视频\"\n          },\n          {\n            \"assert\": {\n              \"$lte\": [\n                {\n                  \"$len\": {\n                    \"$ref\": \"request.audios\"\n                  }\n                },\n                3\n              ]\n            },\n            \"message\": \"TSAI Seedance 最多支持 3 个参考音频\"\n          },\n          {\n            \"assert\": {\n              \"$or\": [\n                {\n                  \"$and\": [\n                    {\n                      \"$eq\": [\n                        {\n                          \"$len\": {\n                            \"$filter\": {\n                              \"from\": {\n                                \"$sortByOrder\": {\n                                  \"$ref\": \"request.images\"\n                                }\n                              },\n                              \"as\": \"media\",\n                              \"where\": {\n                                \"$eq\": [\n                                  {\n                                    \"$ref\": \"media.role\"\n                                  },\n                                  \"first_frame\"\n                                ]\n                              }\n                            }\n                          }\n                        },\n                        0\n                      ]\n                    },\n                    {\n                      \"$eq\": [\n                        {\n                          \"$len\": {\n                            \"$filter\": {\n                              \"from\": {\n                                \"$sortByOrder\": {\n                                  \"$ref\": \"request.images\"\n                                }\n                              },\n                              \"as\": \"media\",\n                              \"where\": {\n                                \"$eq\": [\n                                  {\n                                    \"$ref\": \"media.role\"\n                                  },\n                                  \"last_frame\"\n                                ]\n                              }\n                            }\n                          }\n                        },\n                        0\n                      ]\n                    }\n                  ]\n                },\n                {\n                  \"$and\": [\n                    {\n                      \"$eq\": [\n                        {\n                          \"$len\": {\n                            \"$filter\": {\n                              \"from\": {\n                                \"$sortByOrder\": {\n                                  \"$ref\": \"request.images\"\n                                }\n                              },\n                              \"as\": \"media\",\n                              \"where\": {\n                                \"$and\": [\n                                  {\n                                    \"$ne\": [\n                                      {\n                                        \"$ref\": \"media.role\"\n                                      },\n                                      \"first_frame\"\n                                    ]\n                                  },\n                                  {\n                                    \"$ne\": [\n                                      {\n                                        \"$ref\": \"media.role\"\n                                      },\n                                      \"last_frame\"\n                                    ]\n                                  }\n                                ]\n                              }\n                            }\n                          }\n                        },\n                        0\n                      ]\n                    },\n                    {\n                      \"$eq\": [\n                        {\n                          \"$len\": {\n                            \"$ref\": \"request.videos\"\n                          }\n                        },\n                        0\n                      ]\n                    },\n                    {\n                      \"$eq\": [\n                        {\n                          \"$len\": {\n                            \"$ref\": \"request.audios\"\n                          }\n                        },\n                        0\n                      ]\n                    }\n                  ]\n                }\n              ]\n            },\n            \"message\": \"TSAI Seedance 的首尾帧不能与普通参考图、参考视频或参考音频混用\"\n          }\n        ],\n        \"create\": {\n          \"method\": \"POST\",\n          \"path\": \"/v1/videos/generations\",\n          \"contentType\": \"application/json\",\n          \"body\": {\n            \"$merge\": [\n              {\n                \"model\": {\n                  \"$ref\": \"request.model\"\n                },\n                \"prompt\": {\n                  \"$ref\": \"request.prompt\"\n                },\n                \"conditions\": {\n                  \"$omitEmpty\": {\n                    \"$map\": {\n                      \"from\": {\n                        \"$sortByOrder\": {\n                          \"$concatArrays\": [\n                            {\n                              \"$map\": {\n                                \"from\": {\n                                  \"$ref\": \"request.images\"\n                                },\n                                \"as\": \"media\",\n                                \"in\": {\n                                  \"kind\": \"image\",\n                                  \"value\": {\n                                    \"$ref\": \"media.value\"\n                                  },\n                                  \"role\": {\n                                    \"$switch\": {\n                                      \"cases\": [\n                                        {\n                                          \"when\": {\n                                            \"$eq\": [\n                                              {\n                                                \"$ref\": \"media.role\"\n                                              },\n                                              \"first_frame\"\n                                            ]\n                                          },\n                                          \"then\": \"first_frame\"\n                                        },\n                                        {\n                                          \"when\": {\n                                            \"$eq\": [\n                                              {\n                                                \"$ref\": \"media.role\"\n                                              },\n                                              \"last_frame\"\n                                            ]\n                                          },\n                                          \"then\": \"last_frame\"\n                                        }\n                                      ],\n                                      \"default\": \"reference\"\n                                    }\n                                  },\n                                  \"order\": {\n                                    \"$ref\": \"media.order\"\n                                  }\n                                }\n                              }\n                            },\n                            {\n                              \"$map\": {\n                                \"from\": {\n                                  \"$ref\": \"request.videos\"\n                                },\n                                \"as\": \"media\",\n                                \"in\": {\n                                  \"kind\": \"video\",\n                                  \"value\": {\n                                    \"$ref\": \"media.value\"\n                                  },\n                                  \"role\": \"reference\",\n                                  \"order\": {\n                                    \"$ref\": \"media.order\"\n                                  }\n                                }\n                              }\n                            },\n                            {\n                              \"$map\": {\n                                \"from\": {\n                                  \"$ref\": \"request.audios\"\n                                },\n                                \"as\": \"media\",\n                                \"in\": {\n                                  \"kind\": \"audio\",\n                                  \"value\": {\n                                    \"$ref\": \"media.value\"\n                                  },\n                                  \"role\": \"reference\",\n                                  \"order\": {\n                                    \"$ref\": \"media.order\"\n                                  }\n                                }\n                              }\n                            }\n                          ]\n                        }\n                      },\n                      \"as\": \"condition\",\n                      \"in\": {\n                        \"type\": {\n                          \"$ref\": \"condition.kind\"\n                        },\n                        \"uri\": {\n                          \"$ref\": \"condition.value\"\n                        },\n                        \"role\": {\n                          \"$ref\": \"condition.role\"\n                        }\n                      }\n                    }\n                  }\n                },\n                \"duration\": {\n                  \"$omitEmpty\": {\n                    \"$ref\": \"request.duration\"\n                  }\n                },\n                \"ratio\": {\n                  \"$omitEmpty\": {\n                    \"$ref\": \"request.aspectRatio\"\n                  }\n                },\n                \"resolution\": {\n                  \"$omitEmpty\": {\n                    \"$ref\": \"request.resolution\"\n                  }\n                },\n                \"generate_audio\": {\n                  \"$ref\": \"request.generateAudio\"\n                },\n                \"seed\": {\n                  \"$omitEmpty\": {\n                    \"$ref\": \"request.extra.seed\"\n                  }\n                },\n                \"num_outputs_per_prompt\": {\n                  \"$omitEmpty\": {\n                    \"$coalesce\": [\n                      {\n                        \"$ref\": \"request.output.count\"\n                      },\n                      {\n                        \"$ref\": \"request.imageCount\"\n                      }\n                    ]\n                  }\n                },\n                \"camera_motion\": {\n                  \"$omitEmpty\": {\n                    \"$ref\": \"request.extra.camera_motion\"\n                  }\n                },\n                \"watermark\": {\n                  \"$ref\": \"request.watermark\"\n                }\n              },\n              {\n                \"$coalesce\": [\n                  {\n                    \"$ref\": \"request.providerOptions.tsai-seedance-mini.body\"\n                  },\n                  {\n                    \"$ref\": \"request.providerOptions.tsai-seedance-mini.extra_body\"\n                  },\n                  {}\n                ]\n              }\n            ]\n          }\n        },\n        \"poll\": {\n          \"method\": \"GET\",\n          \"path\": \"/v1/videos/{{taskId}}\",\n          \"contentType\": \"application/json\"\n        },\n        \"response\": {\n          \"taskId\": {\n            \"$coalesce\": [\n              {\n                \"$ref\": \"response.data.0.task_id\"\n              },\n              {\n                \"$ref\": \"response.data.task_id\"\n              },\n              {\n                \"$ref\": \"response.task_id\"\n              },\n              {\n                \"$ref\": \"taskId\"\n              }\n            ]\n          },\n          \"status\": {\n            \"$coalesce\": [\n              {\n                \"$ref\": \"response.data.0.status\"\n              },\n              {\n                \"$ref\": \"response.data.status\"\n              },\n              {\n                \"$ref\": \"response.status\"\n              },\n              \"pending\"\n            ]\n          },\n          \"message\": {\n            \"$coalesce\": [\n              {\n                \"$ref\": \"response.data.error.message\"\n              },\n              {\n                \"$ref\": \"response.data.message\"\n              },\n              {\n                \"$ref\": \"response.error.message\"\n              },\n              {\n                \"$ref\": \"response.message\"\n              },\n              {\n                \"$ref\": \"response.detail\"\n              }\n            ]\n          },\n          \"videos\": {\n            \"$coalesce\": [\n              {\n                \"$ref\": \"response.data.result.videos\"\n              },\n              {\n                \"$ref\": \"response.result.videos\"\n              }\n            ]\n          },\n          \"errorPaths\": [\n            \"error.code\",\n            \"data.error.code\"\n          ],\n          \"resultEphemeral\": false\n        }\n      },\n      {\n        \"id\": \"tsai-seedream\",\n        \"label\": \"TSAI GPT Image 2 / Banana 2.1 / Seedream 4.5 图片\",\n        \"capabilities\": [\n          \"image\"\n        ],\n        \"scopes\": [\n          \"admin.system-channel\",\n          \"user.custom-channel\",\n          \"canvas\",\n          \"creation\",\n          \"agent\"\n        ],\n        \"baseUrl\": \"https://api.alifenqi.com:8188\",\n        \"requiresPublicMediaUrls\": true,\n        \"auth\": {\n          \"type\": \"bearer\",\n          \"field\": \"apiKey\"\n        },\n        \"parameters\": [\n          {\n            \"name\": \"model\",\n            \"type\": \"string\",\n            \"required\": true,\n            \"mapping\": \"model\",\n            \"description\": \"图片模型 ID。\"\n          },\n          {\n            \"name\": \"prompt\",\n            \"type\": \"string\",\n            \"required\": true,\n            \"mapping\": \"prompt\",\n            \"description\": \"图片提示词。\"\n          },\n          {\n            \"name\": \"images\",\n            \"type\": \"media[]\",\n            \"required\": false,\n            \"mapping\": \"image\",\n            \"description\": \"可选参考图；单张发送字符串，多张发送 URL 数组。\"\n          },\n          {\n            \"name\": \"imageCount\",\n            \"type\": \"integer\",\n            \"required\": false,\n            \"mapping\": \"n\",\n            \"description\": \"输出数量。\"\n          },\n          {\n            \"name\": \"aspectRatio\",\n            \"type\": \"string\",\n            \"required\": false,\n            \"mapping\": \"ratio\",\n            \"description\": \"画幅比例，例如 auto、1:1、16:9；按模型支持范围选择。\"\n          },\n          {\n            \"name\": \"resolution\",\n            \"type\": \"string\",\n            \"required\": false,\n            \"mapping\": \"resolution\",\n            \"description\": \"分辨率档位 1k、2k 或 4k；上游使用小写。\"\n          },\n          {\n            \"name\": \"watermark\",\n            \"type\": \"boolean\",\n            \"required\": false,\n            \"mapping\": \"watermark\",\n            \"description\": \"水印开关；显式 false 也发送。\"\n          },\n          {\n            \"name\": \"providerOptions\",\n            \"type\": \"object\",\n            \"required\": false,\n            \"mapping\": \"provider-specific fields\",\n            \"description\": \"渠道扩展字段。\"\n          }\n        ],\n        \"validations\": [\n          {\n            \"assert\": {\n              \"$gt\": [\n                {\n                  \"$len\": {\n                    \"$trim\": {\n                      \"$ref\": \"request.prompt\"\n                    }\n                  }\n                },\n                0\n              ]\n            },\n            \"message\": \"TSAI Seedream 需要填写 prompt\"\n          },\n          {\n            \"assert\": {\n              \"$lte\": [\n                {\n                  \"$len\": {\n                    \"$ref\": \"request.prompt\"\n                  }\n                },\n                20000\n              ]\n            },\n            \"message\": \"TSAI Seedream 的 prompt 最多 20000 个字符\"\n          }\n        ],\n        \"create\": {\n          \"method\": \"POST\",\n          \"path\": \"/v1/images/generations\",\n          \"contentType\": \"application/json\",\n          \"body\": {\n            \"$merge\": [\n              {\n                \"model\": {\n                  \"$ref\": \"request.model\"\n                },\n                \"prompt\": {\n                  \"$ref\": \"request.prompt\"\n                },\n                \"resolution\": {\n                  \"$omitEmpty\": {\n                    \"$lower\": {\n                      \"$ref\": \"request.resolution\"\n                    }\n                  }\n                },\n                \"ratio\": {\n                  \"$omitEmpty\": {\n                    \"$ref\": \"request.aspectRatio\"\n                  }\n                },\n                \"n\": {\n                  \"$omitEmpty\": {\n                    \"$coalesce\": [\n                      {\n                        \"$ref\": \"request.output.count\"\n                      },\n                      {\n                        \"$ref\": \"request.imageCount\"\n                      }\n                    ]\n                  }\n                },\n                \"image\": {\n                  \"$omitEmpty\": {\n                    \"$if\": {\n                      \"condition\": {\n                        \"$eq\": [\n                          {\n                            \"$len\": {\n                              \"$ref\": \"request.images\"\n                            }\n                          },\n                          1\n                        ]\n                      },\n                      \"then\": {\n                        \"$first\": {\n                          \"$map\": {\n                            \"from\": {\n                              \"$sortByOrder\": {\n                                \"$ref\": \"request.images\"\n                              }\n                            },\n                            \"as\": \"media\",\n                            \"in\": {\n                              \"$ref\": \"media.value\"\n                            }\n                          }\n                        }\n                      },\n                      \"else\": {\n                        \"$map\": {\n                          \"from\": {\n                            \"$sortByOrder\": {\n                              \"$ref\": \"request.images\"\n                            }\n                          },\n                          \"as\": \"media\",\n                          \"in\": {\n                            \"$ref\": \"media.value\"\n                          }\n                        }\n                      }\n                    }\n                  }\n                },\n                \"watermark\": {\n                  \"$ref\": \"request.watermark\"\n                }\n              },\n              {\n                \"$coalesce\": [\n                  {\n                    \"$ref\": \"request.providerOptions.tsai-seedream.body\"\n                  },\n                  {\n                    \"$ref\": \"request.providerOptions.tsai-seedream.extra_body\"\n                  },\n                  {}\n                ]\n              }\n            ]\n          }\n        },\n        \"poll\": {\n          \"method\": \"GET\",\n          \"path\": \"/v1/images/generations/{{taskId}}\",\n          \"contentType\": \"application/json\"\n        },\n        \"response\": {\n          \"taskId\": {\n            \"$coalesce\": [\n              {\n                \"$ref\": \"response.id\"\n              },\n              {\n                \"$ref\": \"taskId\"\n              }\n            ]\n          },\n          \"status\": {\n            \"$coalesce\": [\n              {\n                \"$ref\": \"response.status\"\n              },\n              \"succeeded\"\n            ]\n          },\n          \"message\": {\n            \"$coalesce\": [\n              {\n                \"$ref\": \"response.error.message\"\n              },\n              {\n                \"$ref\": \"response.message\"\n              }\n            ]\n          },\n          \"images\": {\n            \"$ref\": \"response.data\"\n          },\n          \"errorPaths\": [\n            \"error.code\"\n          ],\n          \"resultEphemeral\": false\n        }\n      },\n      {\n        \"id\": \"tsai-seed-audio\",\n        \"label\": \"TSAI Seed Audio 音频\",\n        \"capabilities\": [\n          \"audio\"\n        ],\n        \"scopes\": [\n          \"admin.system-channel\",\n          \"user.custom-channel\",\n          \"canvas\",\n          \"creation\",\n          \"agent\"\n        ],\n        \"baseUrl\": \"https://api.alifenqi.com:8188\",\n        \"requiresPublicMediaUrls\": true,\n        \"auth\": {\n          \"type\": \"bearer\",\n          \"field\": \"apiKey\"\n        },\n        \"parameters\": [\n          {\n            \"name\": \"model\",\n            \"type\": \"string\",\n            \"required\": true,\n            \"mapping\": \"model\",\n            \"description\": \"音频模型 ID，当前为 seed-audio。\"\n          },\n          {\n            \"name\": \"prompt\",\n            \"type\": \"string\",\n            \"required\": true,\n            \"mapping\": \"prompt\",\n            \"description\": \"需要朗读或生成声音的文本，不能为空。\"\n          },\n          {\n            \"name\": \"speechRate\",\n            \"type\": \"integer\",\n            \"required\": false,\n            \"mapping\": \"speech_rate\",\n            \"description\": \"语速档位编码：0、20、40、60、80 或 100；不是速度倍率。\"\n          },\n          {\n            \"name\": \"audios\",\n            \"type\": \"media[]\",\n            \"required\": false,\n            \"mapping\": \"reference_audio\",\n            \"description\": \"最多 3 条参考音频；不能同时传参考图片。\"\n          },\n          {\n            \"name\": \"images\",\n            \"type\": \"media[]\",\n            \"required\": false,\n            \"mapping\": \"reference_image\",\n            \"description\": \"最多 1 张参考图片；不能同时传参考音频。\"\n          },\n          {\n            \"name\": \"providerOptions\",\n            \"type\": \"object\",\n            \"required\": false,\n            \"mapping\": \"provider-specific fields\",\n            \"description\": \"该 Provider 命名空间内的扩展字段。\"\n          }\n        ],\n        \"validations\": [\n          {\n            \"assert\": {\n              \"$gt\": [\n                {\n                  \"$len\": {\n                    \"$trim\": {\n                      \"$ref\": \"request.prompt\"\n                    }\n                  }\n                },\n                0\n              ]\n            },\n            \"message\": \"TSAI Seed Audio 需要填写 prompt\"\n          },\n          {\n            \"assert\": {\n              \"$lte\": [\n                {\n                  \"$len\": {\n                    \"$ref\": \"request.audios\"\n                  }\n                },\n                3\n              ]\n            },\n            \"message\": \"TSAI Seed Audio 最多支持 3 条参考音频\"\n          },\n          {\n            \"assert\": {\n              \"$lte\": [\n                {\n                  \"$len\": {\n                    \"$ref\": \"request.images\"\n                  }\n                },\n                1\n              ]\n            },\n            \"message\": \"TSAI Seed Audio 最多支持 1 张参考图片\"\n          },\n          {\n            \"assert\": {\n              \"$or\": [\n                {\n                  \"$eq\": [\n                    {\n                      \"$len\": {\n                        \"$ref\": \"request.audios\"\n                      }\n                    },\n                    0\n                  ]\n                },\n                {\n                  \"$eq\": [\n                    {\n                      \"$len\": {\n                        \"$ref\": \"request.images\"\n                      }\n                    },\n                    0\n                  ]\n                }\n              ]\n            },\n            \"message\": \"TSAI Seed Audio 的参考音频和参考图片不能同时使用\"\n          }\n        ],\n        \"create\": {\n          \"method\": \"POST\",\n          \"path\": \"/v1/audio/generations\",\n          \"contentType\": \"application/json\",\n          \"body\": {\n            \"$merge\": [\n              {\n                \"model\": {\n                  \"$ref\": \"request.model\"\n                },\n                \"prompt\": {\n                  \"$ref\": \"request.prompt\"\n                },\n                \"speech_rate\": {\n                  \"$omitEmpty\": {\n                    \"$coalesce\": [\n                      {\n                        \"$ref\": \"request.extra.speech_rate\"\n                      },\n                      {\n                        \"$ref\": \"request.providerOptions.tsai-seed-audio.speech_rate\"\n                      }\n                    ]\n                  }\n                },\n                \"reference_audio\": {\n                  \"$omitEmpty\": {\n                    \"$map\": {\n                      \"from\": {\n                        \"$sortByOrder\": {\n                          \"$ref\": \"request.audios\"\n                        }\n                      },\n                      \"as\": \"media\",\n                      \"in\": {\n                        \"$ref\": \"media.value\"\n                      }\n                    }\n                  }\n                },\n                \"reference_image\": {\n                  \"$omitEmpty\": {\n                    \"$map\": {\n                      \"from\": {\n                        \"$sortByOrder\": {\n                          \"$ref\": \"request.images\"\n                        }\n                      },\n                      \"as\": \"media\",\n                      \"in\": {\n                        \"$ref\": \"media.value\"\n                      }\n                    }\n                  }\n                }\n              },\n              {\n                \"$coalesce\": [\n                  {\n                    \"$ref\": \"request.providerOptions.tsai-seed-audio.body\"\n                  },\n                  {\n                    \"$ref\": \"request.providerOptions.tsai-seed-audio.extra_body\"\n                  },\n                  {}\n                ]\n              }\n            ]\n          }\n        },\n        \"poll\": {\n          \"method\": \"GET\",\n          \"path\": \"/v1/audio/generations/{{taskId}}\",\n          \"contentType\": \"application/json\"\n        },\n        \"response\": {\n          \"taskId\": {\n            \"$coalesce\": [\n              {\n                \"$ref\": \"response.data.0.task_id\"\n              },\n              {\n                \"$ref\": \"response.data.task_id\"\n              },\n              {\n                \"$ref\": \"response.task_id\"\n              },\n              {\n                \"$ref\": \"response.data.0.id\"\n              },\n              {\n                \"$ref\": \"response.data.id\"\n              },\n              {\n                \"$ref\": \"response.id\"\n              },\n              {\n                \"$ref\": \"taskId\"\n              }\n            ]\n          },\n          \"status\": {\n            \"$coalesce\": [\n              {\n                \"$ref\": \"response.data.0.status\"\n              },\n              {\n                \"$ref\": \"response.data.status\"\n              },\n              {\n                \"$ref\": \"response.status\"\n              },\n              \"pending\"\n            ]\n          },\n          \"message\": {\n            \"$coalesce\": [\n              {\n                \"$ref\": \"response.data.0.error.message\"\n              },\n              {\n                \"$ref\": \"response.data.error.message\"\n              },\n              {\n                \"$ref\": \"response.error.message\"\n              },\n              {\n                \"$ref\": \"response.message\"\n              },\n              {\n                \"$ref\": \"response.detail\"\n              }\n            ]\n          },\n          \"audios\": {\n            \"$coalesce\": [\n              {\n                \"$ref\": \"response.audio_url\"\n              },\n              {\n                \"$ref\": \"response.audioUrl\"\n              },\n              {\n                \"$ref\": \"response.result_url\"\n              },\n              {\n                \"$ref\": \"response.url\"\n              },\n              {\n                \"$ref\": \"response.audio\"\n              },\n              {\n                \"$ref\": \"response.data.audio_url\"\n              },\n              {\n                \"$ref\": \"response.data.audioUrl\"\n              },\n              {\n                \"$ref\": \"response.data.url\"\n              },\n              {\n                \"$ref\": \"response.data.audio\"\n              },\n              {\n                \"$ref\": \"response.data.audios\"\n              },\n              {\n                \"$ref\": \"response.data.result.audios\"\n              },\n              {\n                \"$ref\": \"response.data.0.audio_url\"\n              },\n              {\n                \"$ref\": \"response.data.0.audioUrl\"\n              },\n              {\n                \"$ref\": \"response.data.0.url\"\n              },\n              {\n                \"$ref\": \"response.result.audio_url\"\n              },\n              {\n                \"$ref\": \"response.result.audioUrl\"\n              },\n              {\n                \"$ref\": \"response.result.url\"\n              },\n              {\n                \"$ref\": \"response.result.audios\"\n              },\n              {\n                \"$ref\": \"response.output.audio_url\"\n              },\n              {\n                \"$ref\": \"response.output.url\"\n              },\n              {\n                \"$ref\": \"response.output.audio\"\n              },\n              {\n                \"$ref\": \"response.data\"\n              }\n            ]\n          },\n          \"errorPaths\": [\n            \"error.code\",\n            \"data.error.code\"\n          ],\n          \"messagePaths\": [\n            \"error.message\",\n            \"data.error.message\"\n          ],\n          \"resultEphemeral\": true\n        }\n      }\n    ]\n  },\n  \"documentation\": \"<当前插件的完整 documentation，由 README.md 与 docs/interface.md 拼接而成；为避免 JSON 递归，此处不重复展开正文。>\"\n}\n```\n<!-- YINGCE_MANIFEST_CONTRACT_END -->\n"
 }

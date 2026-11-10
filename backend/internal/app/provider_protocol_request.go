@@ -133,6 +133,12 @@ func protocolRequestFromInput(input canvasGenerationInput) protocol.GenerationRe
 			delete(request.ProviderOptions, input.Config.InterfaceType)
 		}
 	}
+	if input.Mode == "image" && input.ImageCapability != nil && input.ImageCapability.Watermark.Supported {
+		if request.Extra == nil {
+			request.Extra = make(map[string]any)
+		}
+		request.Extra["watermark"] = input.ImageCapability.Watermark.Default
+	}
 	return request
 }
 

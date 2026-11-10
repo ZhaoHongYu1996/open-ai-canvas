@@ -80,6 +80,9 @@ func runImageTask(ctx context.Context, input canvasGenerationInput) (map[string]
 				return nil, err
 			}
 		}
+		if input.ImageCapability != nil && input.ImageCapability.Watermark.Supported {
+			_ = writer.WriteField("watermark", fmt.Sprint(input.ImageCapability.Watermark.Default))
+		}
 		if err := writer.Close(); err != nil {
 			return nil, err
 		}
@@ -94,6 +97,9 @@ func runImageTask(ctx context.Context, input canvasGenerationInput) (map[string]
 		}
 		if responseFormat := configuredImageResponseFormat(input.ImageCapability); responseFormat != "" {
 			body["response_format"] = responseFormat
+		}
+		if input.ImageCapability != nil && input.ImageCapability.Watermark.Supported {
+			body["watermark"] = input.ImageCapability.Watermark.Default
 		}
 		if imageParameterSupported(input.ImageCapability, "output_format") {
 			body["output_format"] = "png"
@@ -467,7 +473,9 @@ func volcengineArkImageBody(input canvasGenerationInput) (map[string]interface{}
 		"prompt":          withSystemPrompt(input.Config, input.Prompt),
 		"n":               1,
 		"response_format": "b64_json",
-		"watermark":       false,
+	}
+	if input.ImageCapability != nil && input.ImageCapability.Watermark.Supported {
+		body["watermark"] = input.ImageCapability.Watermark.Default
 	}
 	if key, value := imageSizeParameter(input.ImageCapability, input.Config.Size); value != "" {
 		if key == "size" {

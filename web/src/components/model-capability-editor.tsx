@@ -579,6 +579,7 @@ function ImageCapabilityEditor({ value, onChange, protocol, model, imageParamete
                         })
                     }
                 />
+                <BooleanField label="水印" value={profile.watermark ?? { supported: false, default: false }} disabled={disabled} onChange={(watermark) => update({ watermark })} />
                 <ImageResponseFormatEditor value={profile.responseFormat} disabled={disabled} onChange={(responseFormat) => update({ responseFormat })} />
             </div>
         );
@@ -664,6 +665,7 @@ function ImageCapabilityEditor({ value, onChange, protocol, model, imageParamete
                             </div>
                         ) : null}
                         <BooleanField label="透明背景" value={profile.transparentBackground} disabled={disabled} onChange={(transparentBackground) => update({ transparentBackground })} />
+                        <BooleanField label="水印" value={profile.watermark ?? { supported: false, default: false }} disabled={disabled} onChange={(watermark) => update({ watermark })} />
                         <ImageResponseFormatEditor value={profile.responseFormat} disabled={disabled} onChange={(responseFormat) => update({ responseFormat })} />
                         <ParameterField label="output_format" description="发送 PNG 输出格式" supported={profile.outputFormat.supported} disabled={disabled} onChange={(supported) => update({ outputFormat: { supported } })} />
                     </ProtocolParameterCard>
@@ -747,6 +749,7 @@ function ImageCapabilityEditor({ value, onChange, protocol, model, imageParamete
                         </Field>
                     </div>
                 ) : null}
+                <BooleanField label="水印" value={profile.watermark ?? { supported: false, default: false }} disabled={disabled} onChange={(watermark) => update({ watermark })} />
                 <BooleanField label="透明背景" value={profile.transparentBackground} disabled={disabled} onChange={(transparentBackground) => update({ transparentBackground })} />
                 <div className="grid gap-3 sm:grid-cols-2">
                     <ImageResponseFormatEditor value={profile.responseFormat} disabled={disabled} onChange={(responseFormat) => update({ responseFormat })} />

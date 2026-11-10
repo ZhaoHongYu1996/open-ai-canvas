@@ -1,123 +1,73 @@
-# TSAI 网关接口字段
+# TSAI 网关统一协议映射
 
-该包使用 `yingce.plugin/v1` 统一 Manifest。协议和配置同属一个 `.yingce-plugin` 生命周期；包内不含 Web 入口代码，所有上游请求都由宿主声明式运行时发送。
+该包使用 `yingce.plugin/v1`，Manifest、权限、Provider、配置和版本属于同一个插件生命周期。Provider 只声明上游请求映射；宿主负责密钥、出站安全、媒体 URL、任务轮询与结果保存。包内不执行 Web 代码。
 
-## 协议身份
+## 插件与渠道配置
 
 - 插件 ID：`tsai`。
-- Provider：`tsai-chat`（文本）、`tsai-minimax-h3`（视频）、`tsai-seedance-mini`（Seedance 2.0 与 2.0 mini 视频）、`tsai-seedream`（图片）。
-- 默认 Base URL：`https://api.alifenqi.com:8188`，不要再重复写 `/v1`。
-- 鉴权：渠道密钥，类型 `bearer`，请求头 `Authorization: Bearer <apiKey>`。
-- 对话：`POST /v1/chat/completions`，OpenAI Chat Completions 格式。
-- MiniMax H3 / Seedance 2.0 / 2.0 mini 创建：`POST /v1/videos/generations`。
-- 视频查询：`GET /v1/videos/{{taskId}}`。
-- Seedream 4.5 创建：`POST /v1/images/generations`。
-- 图片长任务查询：`GET /v1/images/generations/{{taskId}}`。
+- Provider：`tsai-chat`（对话）、`tsai-minimax-h3`（MiniMax H3 视频）、`tsai-seedance-mini`（Seedance 与 Wan 视频）、`tsai-seedream`（图片）、`tsai-seed-audio`（Seed Audio）。
+- Base URL：`https://api.alifenqi.com:8188`；不要重复填写 `/v1`。鉴权由渠道密钥配置提供 `Authorization: Bearer <apiKey>`。Manifest、URL、日志和任务正文不保存 API Key。
+- 文档来源：[TSAI API 文档](https://api.alifenqi.com:8188/app/#docs)。版本 `1.3.0`。
 
-渠道 Base URL 只填协议服务根。密钥只由后端渠道中转读取，不要放进浏览器 URL、清单或日志。公网素材必须直接可下载，不接受内网 URL、重定向和 Base64。
+## 相比 1.1.3 的接口变化
 
-## 配置字段
+1. MiniMax H3 从旧的首帧/尾帧、`image_urls`/`video_urls`/`audio_urls` 改为统一 `conditions[]`；比例字段从 `aspect_ratio` 改为 `ratio`。H3 分辨率按文档转为大写（`480P`、`768P`、`1080P`、`2K`）；`generate_audio` 仅在 true 时发送。
+2. Seedance Provider 覆盖 Seedance 2.0、2.0 Fast、2.0 mini 和 Wan 3.0，继续使用 `conditions[]`；Seedance/Wan 分辨率保留文档要求的小写（如 `480p`），不会转换成 `480P`。增加运镜、输出数量、水印和种子字段；显式 false 会保留。
+3. 图片 Provider 新增 GPT Image 2、Banana 2.1，并更新 Seedream 4.5 请求体：用独立的 `resolution`、`ratio`、`n`；删除旧的 `size` 像素推导、`sequential_image_generation`、`response_format` 和 `stream` 字段。
+4. 视频创建只使用平台任务 ID `data[0].task_id` 轮询；成功状态从 `data.status` 读取，结果从 `data.result.videos` 读取。
+5. 增加 Seed Audio 请求 Provider，映射文本、语速档位、最多 3 条参考音频或 1 张参考图片；参考音频和参考图片互斥。
 
-| 字段 | 类型 | 必填 | 说明 |
+## 当前模型与端点
+
+| 能力 | 模型 ID | 创建 | 查询 |
 | --- | --- | --- | --- |
-| `apiKey` | secret | 是 | TSAI 个人中心生成的 API Key，不要发送 DeepSeek 原始密钥或网页登录令牌。 |
+| 对话 | `deepseek-v4-flash`、`deepseek-v4-pro` | `POST /v1/chat/completions` | 同步响应 |
+| 视频 | `seedance-2.0`、`doubao-seedance-2-0-fast-260128`、`doubao-seedance-2-0-mini-260615`、`MiniMax/MiniMax-H3`、`custom/wan3.0-video` | `POST /v1/videos/generations` | `GET /v1/videos/{task_id}` |
+| 图片 | `gpt-image-2`、`banana-2.1`、`doubao-seedream-4-5-251128` | `POST /v1/images/generations` | `GET /v1/images/generations/{task_id}` |
+| 音频 | `seed-audio` | `POST /v1/audio/generations` | `GET /v1/audio/generations/{task_id}` |
 
-## 统一字段映射
+## 字段映射与约束
 
-| 统一字段 | 类型 | 必填 | 实际上游映射 | 说明 |
-| --- | --- | --- | --- | --- |
-| `model` | string | 是 | `model` | 以 TSAI `GET /v1/models` 为准，例如 `deepseek-v4-flash`、`MiniMax/MiniMax-H3`、Seedance 2.0 / mini 的公开 ID、`doubao-seedream-4-5-251128`。 |
-| `messages` | message[] | 对话必填 | `messages` | OpenAI `role`/`content` 消息列表。 |
-| `instructions` | string | 否 | `system/instructions` | 系统指令。 |
-| `prompt` | string | 视频/图片必填 | `prompt` | MiniMax 最多 7000 字；Seedance / Seedream 最多 20000 字。 |
-| `images` | media[] | 否 | MiniMax：首尾帧字段或 `image_urls`；Seedance：`conditions[]`；Seedream：`image` | Seedance 条件使用 `{type:"image", uri, role}`；首尾帧与普通多模态参考不能混用。最多 9 张。 |
-| `videos` | media[] | 否 | MiniMax：`video_urls`；Seedance：`conditions[]` | Seedance 条件使用 `{type:"video", uri, role:"reference"}`，最多 3 段。 |
-| `audios` | media[] | 否 | MiniMax：`audio_urls`；Seedance：`conditions[]` | Seedance 条件使用 `{type:"audio", uri, role:"reference"}`，最多 3 段；MiniMax 音频必须搭配图片或视频。 |
-| `duration` | integer | 否 | `duration` | MiniMax H3 为 4–15 秒、默认 5；Seedance 按公开模型与所选渠道能力校验。 |
-| `aspectRatio` | string | 否 | MiniMax：`aspect_ratio`；Seedance：`ratio`；Seedream：`size` | 视频画幅或图片尺寸档；Seedance 示例为 `16:9`，范围按公开模型与渠道能力。 |
-| `resolution` | string | 否 | `resolution` | MiniMax 转大写（`2K`/`768P`/`480P`/`1080P`）；Seedance 保留上游枚举大小写。 |
-| `generateAudio` | boolean | 否 | `generate_audio` | Seedance 是否同时生成声音。 |
-| `watermark` | boolean | 否 | Seedream：`watermark` | Seedream 默认 true。MiniMax 只允许 false 或省略；Seedance 不发送该字段。 |
-| `cameraMotion` | string | 否 | MiniMax：`camera_motion` | 使用平台定义的运镜值。 |
-| `seed` | integer | 否 | MiniMax / Seedance：`seed` | 固定随机种子；省略时沿用服务端随机策略。 |
-| `numOutputsPerPrompt` | integer | 否 | MiniMax：`num_outputs_per_prompt` | 数量受模型、账号权益和平台并发限制。 |
-| `temperature` | number | 否 | `temperature` | 对话采样温度。 |
-| `top_p` | number | 否 | `top_p` | 对话核采样。 |
-| `max_tokens` | integer | 否 | `max_tokens` | 对话最大输出 token。 |
-| `tools` | array | 否 | `tools` | 对话工具定义。 |
-| `tool_choice` | object\|string | 否 | `tool_choice` | 对话工具选择策略。 |
-| `response_format` | object | 否 | `response_format` | 对话结构化输出。 |
-| `stream` | boolean | 否 | `stream` | 对话流式开关；后台任务当前以最终响应归一。 |
-| `imageCount` | integer | 否 | 固定 1 | Seedream 每次只输出一张图。 |
-| `quality` | string | 否 | 不发送 | TSAI 图片不支持独立质量档。 |
+### 对话
 
-## 创建请求模型与字段清单
+- `model`、`messages` 使用 OpenAI Chat Completions 结构；对话结果读取 `choices[0].message.content`（兼容 `choices[0].text`）。工具、结构化输出和流式参数按当前网关文档支持情况配置。
 
-| 请求位置 | 值或转换表达式 |
-| --- | --- |
-| `tsai-chat.create.method` | `"POST"` |
-| `tsai-chat.create.path` | `"/v1/chat/completions"` |
-| `tsai-chat.create.body.model` | `request.model` |
-| `tsai-chat.create.body.messages` | `request.messages` |
-| `tsai-chat.agent.path` | `"/v1/chat/completions"` |
-| `tsai-minimax-h3.create.path` | `"/v1/videos/generations"` |
-| `tsai-minimax-h3.create.body.prompt` | `request.prompt` |
-| `tsai-minimax-h3.create.body.first_frame_image` | role=`first_frame` 的图片 URL |
-| `tsai-minimax-h3.create.body.last_frame_image` | role=`last_frame` 的图片 URL |
-| `tsai-minimax-h3.create.body.image_urls` | 其余参考图 URL 数组 |
-| `tsai-minimax-h3.create.body.video_urls` | 参考视频 URL 数组 |
-| `tsai-minimax-h3.create.body.audio_urls` | 参考音频 URL 数组 |
-| `tsai-minimax-h3.create.body.aspect_ratio` | `request.aspectRatio` |
-| `tsai-minimax-h3.create.body.resolution` | `request.resolution` 转大写 |
-| `tsai-minimax-h3.poll.path` | `"/v1/videos/{{taskId}}"` |
-| `tsai-seedance-mini.create.path` | `"/v1/videos/generations"` |
-| `tsai-seedance-mini.create.body.prompt` | `request.prompt` |
-| `tsai-seedance-mini.create.body.conditions` | 按顺序排列的 `{type, uri, role}` 图片/视频/音频参考；纯文生视频时省略 |
-| `tsai-seedance-mini.create.body.ratio` | `request.aspectRatio` |
-| `tsai-seedance-mini.create.body.resolution` | `request.resolution` |
-| `tsai-seedance-mini.create.body.generate_audio` | `request.generateAudio` |
-| `tsai-seedance-mini.create.body.seed` | `request.extra.seed` |
-| `tsai-seedance-mini.poll.path` | `"/v1/videos/{{taskId}}"` |
-| `tsai-seedream.create.path` | `"/v1/images/generations"` |
-| `tsai-seedream.create.body.size` | `2K`/`4K` 或由比例映射的像素尺寸 |
-| `tsai-seedream.create.body.image` | 参考图 URL；一张发字符串，多张发数组 |
-| `tsai-seedream.create.body.sequential_image_generation` | `"disabled"` |
-| `tsai-seedream.create.body.response_format` | `"url"` |
-| `tsai-seedream.create.body.stream` | `false` |
-| `tsai-seedream.poll.path` | `"/v1/images/generations/{{taskId}}"` |
+### 视频
 
-## Provider 扩展点
+| 统一请求字段 | 上游字段 | 规则 |
+| --- | --- | --- |
+| `model`、`prompt`、`duration` | 同名 | prompt 必填；duration 为秒数。|
+| `images`、`videos`、`audios` | `conditions[]` | 每项为 `{type, uri, role}`；首帧/尾帧映射为对应 role，其余素材为 reference。|
+| `aspectRatio` | `ratio` | 按模型枚举原样传递。|
+| `resolution` | `resolution` | Seedance/Wan 使用 `480p`/`720p`/`1080p` 等小写值；MiniMax 转为 `480P`/`768P`/`1080P`/`2K`。|
+| `generateAudio` | `generate_audio` | Seedance/Wan 发送 true/false；MiniMax 仅发送 true，false/未设置时省略。|
+| `numOutputsPerPrompt` | `num_outputs_per_prompt` | 使用输出数量设置。|
+| `cameraMotion`、`seed`、`watermark` | 同名 snake_case 字段 | 仅在宿主提供时发送；boolean false 保留。|
 
-- `providerOptions.tsai-chat.body`
-- `providerOptions.tsai-chat.extra_body`
-- `providerOptions.tsai-chat.thinking`
-- `providerOptions.tsai-minimax-h3.body`
-- `providerOptions.tsai-minimax-h3.extra_body`
-- `providerOptions.tsai-seedance-mini.body`
-- `providerOptions.tsai-seedance-mini.extra_body`
-- `providerOptions.tsai-seedream.body`
-- `providerOptions.tsai-seedream.extra_body`
+视频创建返回 `data[0].task_id`，`submitted` 进入等待。查询状态可能为 `queued`、`processing`、`succeeded` 或 `failed`；成功视频 URL 从 `data.result.videos[].url` 读取。新增的 `execution_stage` 是阶段说明，不替代主状态。收到任务 ID 后只轮询，不要重新提交创建请求。
 
-动态模型或网关需要额外字段时，写入上述对象；该对象不是协议本身的固定 schema，不会被清单校验。
+### 图片
 
-## 响应映射表与字段清单
+- 请求字段为 `model`、`prompt`、`resolution`（`1k`/`2k`/`4k`，小写）、`ratio`、`n`、可选参考图 `image` 和 `watermark`。模型所支持的比例并不完全相同；以相应模型文档为准。
+- 单张参考图发送 URL 字符串，多张发送字符串数组。素材 URL 由宿主转换为短期公网可下载地址。
+- 同步成功响应使用 `data[].url`。长任务可能返回 HTTP 202 和 `id/status`，再请求 `GET /v1/images/generations/{task_id}`；不会重复提交。
 
-| 映射位置 | 解析路径或转换表达式 |
-| --- | --- |
-| `tsai-chat.response.text` | `choices.0.message.content` / `choices.0.text` |
-| `tsai-minimax-h3.response.taskId` | `data.0.task_id` / `data.id` / `task_id` |
-| `tsai-minimax-h3.response.status` | `data.0.status` / `data.status` / `status` |
-| `tsai-minimax-h3.response.videos` | `data.result.videos` |
-| `tsai-seedance-mini.response.taskId` | 与 MiniMax 相同 |
-| `tsai-seedance-mini.response.videos` | `data.result.videos` |
-| `tsai-seedream.response.taskId` | `id` |
-| `tsai-seedream.response.status` | `status` |
-| `tsai-seedream.response.images` | `data` |
-| `response.errorPaths` | `error.code` / `data.error.code` |
+### 音频
 
-## 响应约定
+- Provider：`tsai-seed-audio`；模型字段固定使用 `seed-audio`。`prompt` 必填，`speech_rate` 可选，只接受 `0`、`20`、`40`、`60`、`80`、`100` 档位；0 为默认档，不是速度倍率。
+- 参考素材使用 `reference_audio` URL 数组（最多 3 条）或 `reference_image` URL 数组（最多 1 张），二者不能同时传。素材 URL 由宿主转换为短期公网可下载地址。
+- 创建与查询路径分别为 `POST /v1/audio/generations` 和 `GET /v1/audio/generations/{task_id}`，建议每 3–10 秒查询。
+- 文档没有提供音频创建/查询的 JSON 响应示例。Manifest 暂用兼容路径提取 `data[0].task_id` / `task_id` / `id`、`status`，以及 `audio_url`、`url`、`audios` 等常见音频结果字段；结果按短期 URL 处理并由宿主下载保存。以上响应字段尚未用真实任务确认。
 
-视频提交返回 `{ code: 200, data: [{ status: "submitted", task_id }] }`，必须用 `data[0].task_id` 查询，不能使用上游内部任务 ID。轮询对象在 `data` 里，成功状态为 `succeeded`，结果取 `data.result.videos[0].url`。`submitted`/`queued` 视为等待，`processing` 视为处理中。图片通常同步返回 `status=succeeded` 与平台文件 URL；超过约 120 秒则返回 HTTP 202 和同一 `id`，再用创建任务的同一把 Key 查询，不要重新提交。对话成功后直接取 `choices[0].message.content`。HTTP 非 2xx、业务 error object 记为失败。当前没有取消接口。
+## 轮询、结果和错误
+
+- 图片、视频与音频查询响应支持 `queued/submitted`（等待）、`processing`（处理中）、`succeeded/completed`（成功）和 `failed/error/cancelled`（失败）状态归一。视频结果读取 `data.result.videos`；图片结果读取 `data`。视频和图片文档标注为稳定结果地址，Manifest 将 `resultEphemeral` 设为 false；Seed Audio 响应格式未公开，按短期音频 URL 处理。
+- 接口文档建议约 3–10 秒查询一次任务。平台状态中的排队/保存/核验阶段用于展示进度，不能代替 `status`。
+- HTTP 400/422 表示参数或模型校验拒绝；401/403 是鉴权或权限问题；402 是额度不足；404 是模型或资源不可访问；409 是幂等键冲突；413 是上传大小限制；429 是限流；502/503/504 是上游服务异常。错误响应按错误字段呈现，不将无任务 ID 的请求自动重放。
+
+## 扩展字段
+
+各 Provider 的 `providerOptions.<provider-id>.body` / `extra_body` 可传当前接口确实支持的扩展字段。不要将 API Key、Cookie、回调密钥或任意网页脚本放入扩展请求体。
 
 <!-- YINGCE_MANIFEST_CONTRACT_START -->
 ## Manifest 完整接口定义
@@ -129,9 +79,9 @@
   "apiVersion": "yingce.plugin/v1",
   "id": "tsai",
   "name": "TSAI 网关",
-  "version": "1.1.3",
+  "version": "1.3.0",
   "author": "TSAI / 影策",
-  "description": "随应用自动注册的 TSAI 对话、MiniMax H3、Seedance 2.0 / 2.0 mini 视频与 Seedream 4.5 图片官方系统协议。",
+  "description": "TSAI 对话、Seedance 2.0 系列与 Wan 3.0 视频、MiniMax H3、GPT Image 2 / Banana 2.1 / Seedream 4.5 图片和 Seed Audio 音频的声明式系统协议。",
   "enabled": true,
   "installable": true,
   "permissions": [
@@ -417,22 +367,22 @@
             "name": "images",
             "type": "media[]",
             "required": false,
-            "mapping": "first_frame_image/last_frame_image/image_urls",
-            "description": "按 role 拆到参考图、首帧和尾帧。"
+            "mapping": "conditions[].uri",
+            "description": "图片参考素材；与视频、音频统一映射到 conditions。"
           },
           {
             "name": "videos",
             "type": "media[]",
             "required": false,
-            "mapping": "reference_video",
-            "description": "参考视频。"
+            "mapping": "conditions[].uri",
+            "description": "视频参考素材；映射到 conditions。"
           },
           {
             "name": "audios",
             "type": "media[]",
             "required": false,
-            "mapping": "reference_audio",
-            "description": "参考音频。"
+            "mapping": "conditions[].uri",
+            "description": "音频参考素材；映射到 conditions。"
           },
           {
             "name": "duration",
@@ -445,22 +395,22 @@
             "name": "aspectRatio",
             "type": "string",
             "required": false,
-            "mapping": "aspect_ratio",
-            "description": "画幅比例。"
+            "mapping": "ratio",
+            "description": "画幅比例，例如 16:9。"
           },
           {
             "name": "resolution",
             "type": "string",
             "required": false,
             "mapping": "resolution",
-            "description": "分辨率档位；默认 2K，也支持 768P、480P 和 1080P。"
+            "description": "分辨率；上游枚举使用大写，如 480P、768P、1080P、2K。"
           },
           {
             "name": "generateAudio",
             "type": "boolean",
             "required": false,
             "mapping": "generate_audio",
-            "description": "是否同时生成音频。"
+            "description": "仅当为 true 时发送；false 或未设置时省略。"
           },
           {
             "name": "numOutputsPerPrompt",
@@ -474,7 +424,7 @@
             "type": "string",
             "required": false,
             "mapping": "camera_motion",
-            "description": "平台统一运镜提示。"
+            "description": "平台定义的运镜提示。"
           },
           {
             "name": "seed",
@@ -489,6 +439,13 @@
             "required": false,
             "mapping": "provider-specific fields",
             "description": "渠道扩展字段。"
+          },
+          {
+            "name": "watermark",
+            "type": "boolean",
+            "required": false,
+            "mapping": "watermark",
+            "description": "水印开关；显式 false 会保留。"
           }
         ],
         "validations": [
@@ -737,7 +694,7 @@
                     "$ref": "request.duration"
                   }
                 },
-                "aspect_ratio": {
+                "ratio": {
                   "$omitEmpty": {
                     "$ref": "request.aspectRatio"
                   }
@@ -749,134 +706,124 @@
                     }
                   }
                 },
-                "first_frame_image": {
-                  "$omitEmpty": {
-                    "$first": {
-                      "$map": {
-                        "from": {
-                          "$filter": {
-                            "from": {
-                              "$sortByOrder": {
-                                "$ref": "request.images"
-                              }
-                            },
-                            "as": "media",
-                            "where": {
-                              "$eq": [
-                                {
-                                  "$ref": "media.role"
-                                },
-                                "first_frame"
-                              ]
-                            }
-                          }
-                        },
-                        "as": "media",
-                        "in": {
-                          "$ref": "media.value"
-                        }
-                      }
-                    }
-                  }
-                },
-                "last_frame_image": {
-                  "$omitEmpty": {
-                    "$first": {
-                      "$map": {
-                        "from": {
-                          "$filter": {
-                            "from": {
-                              "$sortByOrder": {
-                                "$ref": "request.images"
-                              }
-                            },
-                            "as": "media",
-                            "where": {
-                              "$eq": [
-                                {
-                                  "$ref": "media.role"
-                                },
-                                "last_frame"
-                              ]
-                            }
-                          }
-                        },
-                        "as": "media",
-                        "in": {
-                          "$ref": "media.value"
-                        }
-                      }
-                    }
-                  }
-                },
-                "image_urls": {
-                  "$omitEmpty": {
-                    "$map": {
-                      "from": {
-                        "$filter": {
-                          "from": {
-                            "$sortByOrder": {
-                              "$ref": "request.images"
-                            }
-                          },
-                          "as": "media",
-                          "where": {
-                            "$and": [
-                              {
-                                "$ne": [
-                                  {
-                                    "$ref": "media.role"
-                                  },
-                                  "first_frame"
-                                ]
-                              },
-                              {
-                                "$ne": [
-                                  {
-                                    "$ref": "media.role"
-                                  },
-                                  "last_frame"
-                                ]
-                              }
-                            ]
-                          }
-                        }
-                      },
-                      "as": "media",
-                      "in": {
-                        "$ref": "media.value"
-                      }
-                    }
-                  }
-                },
-                "video_urls": {
+                "conditions": {
                   "$omitEmpty": {
                     "$map": {
                       "from": {
                         "$sortByOrder": {
-                          "$ref": "request.videos"
+                          "$concatArrays": [
+                            {
+                              "$map": {
+                                "from": {
+                                  "$ref": "request.images"
+                                },
+                                "as": "media",
+                                "in": {
+                                  "kind": "image",
+                                  "value": {
+                                    "$ref": "media.value"
+                                  },
+                                  "role": {
+                                    "$switch": {
+                                      "cases": [
+                                        {
+                                          "when": {
+                                            "$eq": [
+                                              {
+                                                "$ref": "media.role"
+                                              },
+                                              "first_frame"
+                                            ]
+                                          },
+                                          "then": "first_frame"
+                                        },
+                                        {
+                                          "when": {
+                                            "$eq": [
+                                              {
+                                                "$ref": "media.role"
+                                              },
+                                              "last_frame"
+                                            ]
+                                          },
+                                          "then": "last_frame"
+                                        }
+                                      ],
+                                      "default": "reference"
+                                    }
+                                  },
+                                  "order": {
+                                    "$ref": "media.order"
+                                  }
+                                }
+                              }
+                            },
+                            {
+                              "$map": {
+                                "from": {
+                                  "$ref": "request.videos"
+                                },
+                                "as": "media",
+                                "in": {
+                                  "kind": "video",
+                                  "value": {
+                                    "$ref": "media.value"
+                                  },
+                                  "role": "reference",
+                                  "order": {
+                                    "$ref": "media.order"
+                                  }
+                                }
+                              }
+                            },
+                            {
+                              "$map": {
+                                "from": {
+                                  "$ref": "request.audios"
+                                },
+                                "as": "media",
+                                "in": {
+                                  "kind": "audio",
+                                  "value": {
+                                    "$ref": "media.value"
+                                  },
+                                  "role": "reference",
+                                  "order": {
+                                    "$ref": "media.order"
+                                  }
+                                }
+                              }
+                            }
+                          ]
                         }
                       },
-                      "as": "media",
+                      "as": "condition",
                       "in": {
-                        "$ref": "media.value"
+                        "type": {
+                          "$ref": "condition.kind"
+                        },
+                        "uri": {
+                          "$ref": "condition.value"
+                        },
+                        "role": {
+                          "$ref": "condition.role"
+                        }
                       }
                     }
                   }
                 },
-                "audio_urls": {
-                  "$omitEmpty": {
-                    "$map": {
-                      "from": {
-                        "$sortByOrder": {
-                          "$ref": "request.audios"
-                        }
-                      },
-                      "as": "media",
-                      "in": {
-                        "$ref": "media.value"
-                      }
-                    }
+                "generate_audio": {
+                  "$if": {
+                    "condition": {
+                      "$eq": [
+                        {
+                          "$ref": "request.generateAudio"
+                        },
+                        true
+                      ]
+                    },
+                    "then": true,
+                    "else": null
                   }
                 },
                 "num_outputs_per_prompt": {
@@ -900,6 +847,9 @@
                   "$omitEmpty": {
                     "$ref": "request.extra.seed"
                   }
+                },
+                "watermark": {
+                  "$ref": "request.watermark"
                 }
               },
               {
@@ -931,13 +881,7 @@
                 "$ref": "response.data.task_id"
               },
               {
-                "$ref": "response.data.id"
-              },
-              {
                 "$ref": "response.task_id"
-              },
-              {
-                "$ref": "response.id"
               },
               {
                 "$ref": "taskId"
@@ -962,6 +906,9 @@
             "$coalesce": [
               {
                 "$ref": "response.data.error.message"
+              },
+              {
+                "$ref": "response.data.message"
               },
               {
                 "$ref": "response.error.message"
@@ -993,7 +940,7 @@
       },
       {
         "id": "tsai-seedance-mini",
-        "label": "TSAI Seedance 2.0 / 2.0 mini 视频",
+        "label": "TSAI Seedance 2.0 系列 / Wan 3.0 视频",
         "capabilities": [
           "video"
         ],
@@ -1065,14 +1012,14 @@
             "type": "string",
             "required": false,
             "mapping": "resolution",
-            "description": "分辨率档位；具体支持规格以当前 Seedance 公开模型和渠道为准。"
+            "description": "保留上游大小写；Seedance 与 Wan 使用 480p、720p、1080p。"
           },
           {
             "name": "generateAudio",
             "type": "boolean",
             "required": false,
             "mapping": "generate_audio",
-            "description": "是否同时生成音频。"
+            "description": "是否生成音频；显式 false 也发送。"
           },
           {
             "name": "providerOptions",
@@ -1080,6 +1027,34 @@
             "required": false,
             "mapping": "provider-specific fields",
             "description": "渠道扩展字段。"
+          },
+          {
+            "name": "numOutputsPerPrompt",
+            "type": "integer",
+            "required": false,
+            "mapping": "num_outputs_per_prompt",
+            "description": "单次输出数量。"
+          },
+          {
+            "name": "cameraMotion",
+            "type": "string",
+            "required": false,
+            "mapping": "camera_motion",
+            "description": "平台定义的运镜提示。"
+          },
+          {
+            "name": "seed",
+            "type": "integer",
+            "required": false,
+            "mapping": "seed",
+            "description": "固定随机种子。"
+          },
+          {
+            "name": "watermark",
+            "type": "boolean",
+            "required": false,
+            "mapping": "watermark",
+            "description": "是否添加水印；显式 false 也发送。"
           }
         ],
         "validations": [
@@ -1408,14 +1383,32 @@
                   }
                 },
                 "generate_audio": {
-                  "$omitEmpty": {
-                    "$ref": "request.generateAudio"
-                  }
+                  "$ref": "request.generateAudio"
                 },
                 "seed": {
                   "$omitEmpty": {
                     "$ref": "request.extra.seed"
                   }
+                },
+                "num_outputs_per_prompt": {
+                  "$omitEmpty": {
+                    "$coalesce": [
+                      {
+                        "$ref": "request.output.count"
+                      },
+                      {
+                        "$ref": "request.imageCount"
+                      }
+                    ]
+                  }
+                },
+                "camera_motion": {
+                  "$omitEmpty": {
+                    "$ref": "request.extra.camera_motion"
+                  }
+                },
+                "watermark": {
+                  "$ref": "request.watermark"
                 }
               },
               {
@@ -1447,13 +1440,7 @@
                 "$ref": "response.data.task_id"
               },
               {
-                "$ref": "response.data.id"
-              },
-              {
                 "$ref": "response.task_id"
-              },
-              {
-                "$ref": "response.id"
               },
               {
                 "$ref": "taskId"
@@ -1478,6 +1465,9 @@
             "$coalesce": [
               {
                 "$ref": "response.data.error.message"
+              },
+              {
+                "$ref": "response.data.message"
               },
               {
                 "$ref": "response.error.message"
@@ -1509,7 +1499,7 @@
       },
       {
         "id": "tsai-seedream",
-        "label": "TSAI Seedream 4.5 图片",
+        "label": "TSAI GPT Image 2 / Banana 2.1 / Seedream 4.5 图片",
         "capabilities": [
           "image"
         ],
@@ -1546,42 +1536,35 @@
             "type": "media[]",
             "required": false,
             "mapping": "image",
-            "description": "单图或多参考图 URL，按提示词中的图1、图2顺序。"
+            "description": "可选参考图；单张发送字符串，多张发送 URL 数组。"
           },
           {
             "name": "imageCount",
             "type": "integer",
             "required": false,
             "mapping": "n",
-            "description": "输出数量；本协议固定一张。"
+            "description": "输出数量。"
           },
           {
             "name": "aspectRatio",
             "type": "string",
             "required": false,
-            "mapping": "size",
-            "description": "2K、4K 或宽高像素。"
+            "mapping": "ratio",
+            "description": "画幅比例，例如 auto、1:1、16:9；按模型支持范围选择。"
           },
           {
             "name": "resolution",
             "type": "string",
             "required": false,
-            "mapping": "size",
-            "description": "分辨率档位，可映射到 size。"
-          },
-          {
-            "name": "quality",
-            "type": "string",
-            "required": false,
-            "mapping": "unused",
-            "description": "TSAI 图片不支持独立质量档。"
+            "mapping": "resolution",
+            "description": "分辨率档位 1k、2k 或 4k；上游使用小写。"
           },
           {
             "name": "watermark",
             "type": "boolean",
             "required": false,
             "mapping": "watermark",
-            "description": "是否添加水印，默认 true。"
+            "description": "水印开关；显式 false 也发送。"
           },
           {
             "name": "providerOptions",
@@ -1634,142 +1617,28 @@
                 "prompt": {
                   "$ref": "request.prompt"
                 },
-                "size": {
+                "resolution": {
                   "$omitEmpty": {
-                    "$switch": {
-                      "cases": [
-                        {
-                          "when": {
-                            "$eq": [
-                              {
-                                "$lower": {
-                                  "$ref": "request.aspectRatio"
-                                }
-                              },
-                              "2k"
-                            ]
-                          },
-                          "then": "2K"
-                        },
-                        {
-                          "when": {
-                            "$eq": [
-                              {
-                                "$lower": {
-                                  "$ref": "request.aspectRatio"
-                                }
-                              },
-                              "4k"
-                            ]
-                          },
-                          "then": "4K"
-                        },
-                        {
-                          "when": {
-                            "$eq": [
-                              {
-                                "$lower": {
-                                  "$ref": "request.aspectRatio"
-                                }
-                              },
-                              "auto"
-                            ]
-                          },
-                          "then": "2K"
-                        },
-                        {
-                          "when": {
-                            "$eq": [
-                              {
-                                "$ref": "request.aspectRatio"
-                              },
-                              "1:1"
-                            ]
-                          },
-                          "then": "2048x2048"
-                        },
-                        {
-                          "when": {
-                            "$eq": [
-                              {
-                                "$ref": "request.aspectRatio"
-                              },
-                              "16:9"
-                            ]
-                          },
-                          "then": "2560x1440"
-                        },
-                        {
-                          "when": {
-                            "$eq": [
-                              {
-                                "$ref": "request.aspectRatio"
-                              },
-                              "9:16"
-                            ]
-                          },
-                          "then": "1440x2560"
-                        },
-                        {
-                          "when": {
-                            "$eq": [
-                              {
-                                "$ref": "request.aspectRatio"
-                              },
-                              "4:3"
-                            ]
-                          },
-                          "then": "2304x1728"
-                        },
-                        {
-                          "when": {
-                            "$eq": [
-                              {
-                                "$ref": "request.aspectRatio"
-                              },
-                              "3:4"
-                            ]
-                          },
-                          "then": "1728x2304"
-                        },
-                        {
-                          "when": {
-                            "$eq": [
-                              {
-                                "$ref": "request.aspectRatio"
-                              },
-                              "3:2"
-                            ]
-                          },
-                          "then": "2496x1664"
-                        },
-                        {
-                          "when": {
-                            "$eq": [
-                              {
-                                "$ref": "request.aspectRatio"
-                              },
-                              "2:3"
-                            ]
-                          },
-                          "then": "1664x2496"
-                        },
-                        {
-                          "when": {
-                            "$eq": [
-                              {
-                                "$ref": "request.aspectRatio"
-                              },
-                              "21:9"
-                            ]
-                          },
-                          "then": "3024x1296"
-                        }
-                      ],
-                      "default": {
-                        "$ref": "request.aspectRatio"
-                      }
+                    "$lower": {
+                      "$ref": "request.resolution"
                     }
+                  }
+                },
+                "ratio": {
+                  "$omitEmpty": {
+                    "$ref": "request.aspectRatio"
+                  }
+                },
+                "n": {
+                  "$omitEmpty": {
+                    "$coalesce": [
+                      {
+                        "$ref": "request.output.count"
+                      },
+                      {
+                        "$ref": "request.imageCount"
+                      }
+                    ]
                   }
                 },
                 "image": {
@@ -1816,13 +1685,8 @@
                     }
                   }
                 },
-                "sequential_image_generation": "disabled",
-                "response_format": "url",
-                "stream": false,
                 "watermark": {
-                  "$omitEmpty": {
-                    "$ref": "request.watermark"
-                  }
+                  "$ref": "request.watermark"
                 }
               },
               {
@@ -1880,6 +1744,354 @@
             "error.code"
           ],
           "resultEphemeral": false
+        }
+      },
+      {
+        "id": "tsai-seed-audio",
+        "label": "TSAI Seed Audio 音频",
+        "capabilities": [
+          "audio"
+        ],
+        "scopes": [
+          "admin.system-channel",
+          "user.custom-channel",
+          "canvas",
+          "creation",
+          "agent"
+        ],
+        "baseUrl": "https://api.alifenqi.com:8188",
+        "requiresPublicMediaUrls": true,
+        "auth": {
+          "type": "bearer",
+          "field": "apiKey"
+        },
+        "parameters": [
+          {
+            "name": "model",
+            "type": "string",
+            "required": true,
+            "mapping": "model",
+            "description": "音频模型 ID，当前为 seed-audio。"
+          },
+          {
+            "name": "prompt",
+            "type": "string",
+            "required": true,
+            "mapping": "prompt",
+            "description": "需要朗读或生成声音的文本，不能为空。"
+          },
+          {
+            "name": "speechRate",
+            "type": "integer",
+            "required": false,
+            "mapping": "speech_rate",
+            "description": "语速档位编码：0、20、40、60、80 或 100；不是速度倍率。"
+          },
+          {
+            "name": "audios",
+            "type": "media[]",
+            "required": false,
+            "mapping": "reference_audio",
+            "description": "最多 3 条参考音频；不能同时传参考图片。"
+          },
+          {
+            "name": "images",
+            "type": "media[]",
+            "required": false,
+            "mapping": "reference_image",
+            "description": "最多 1 张参考图片；不能同时传参考音频。"
+          },
+          {
+            "name": "providerOptions",
+            "type": "object",
+            "required": false,
+            "mapping": "provider-specific fields",
+            "description": "该 Provider 命名空间内的扩展字段。"
+          }
+        ],
+        "validations": [
+          {
+            "assert": {
+              "$gt": [
+                {
+                  "$len": {
+                    "$trim": {
+                      "$ref": "request.prompt"
+                    }
+                  }
+                },
+                0
+              ]
+            },
+            "message": "TSAI Seed Audio 需要填写 prompt"
+          },
+          {
+            "assert": {
+              "$lte": [
+                {
+                  "$len": {
+                    "$ref": "request.audios"
+                  }
+                },
+                3
+              ]
+            },
+            "message": "TSAI Seed Audio 最多支持 3 条参考音频"
+          },
+          {
+            "assert": {
+              "$lte": [
+                {
+                  "$len": {
+                    "$ref": "request.images"
+                  }
+                },
+                1
+              ]
+            },
+            "message": "TSAI Seed Audio 最多支持 1 张参考图片"
+          },
+          {
+            "assert": {
+              "$or": [
+                {
+                  "$eq": [
+                    {
+                      "$len": {
+                        "$ref": "request.audios"
+                      }
+                    },
+                    0
+                  ]
+                },
+                {
+                  "$eq": [
+                    {
+                      "$len": {
+                        "$ref": "request.images"
+                      }
+                    },
+                    0
+                  ]
+                }
+              ]
+            },
+            "message": "TSAI Seed Audio 的参考音频和参考图片不能同时使用"
+          }
+        ],
+        "create": {
+          "method": "POST",
+          "path": "/v1/audio/generations",
+          "contentType": "application/json",
+          "body": {
+            "$merge": [
+              {
+                "model": {
+                  "$ref": "request.model"
+                },
+                "prompt": {
+                  "$ref": "request.prompt"
+                },
+                "speech_rate": {
+                  "$omitEmpty": {
+                    "$coalesce": [
+                      {
+                        "$ref": "request.extra.speech_rate"
+                      },
+                      {
+                        "$ref": "request.providerOptions.tsai-seed-audio.speech_rate"
+                      }
+                    ]
+                  }
+                },
+                "reference_audio": {
+                  "$omitEmpty": {
+                    "$map": {
+                      "from": {
+                        "$sortByOrder": {
+                          "$ref": "request.audios"
+                        }
+                      },
+                      "as": "media",
+                      "in": {
+                        "$ref": "media.value"
+                      }
+                    }
+                  }
+                },
+                "reference_image": {
+                  "$omitEmpty": {
+                    "$map": {
+                      "from": {
+                        "$sortByOrder": {
+                          "$ref": "request.images"
+                        }
+                      },
+                      "as": "media",
+                      "in": {
+                        "$ref": "media.value"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "$coalesce": [
+                  {
+                    "$ref": "request.providerOptions.tsai-seed-audio.body"
+                  },
+                  {
+                    "$ref": "request.providerOptions.tsai-seed-audio.extra_body"
+                  },
+                  {}
+                ]
+              }
+            ]
+          }
+        },
+        "poll": {
+          "method": "GET",
+          "path": "/v1/audio/generations/{{taskId}}",
+          "contentType": "application/json"
+        },
+        "response": {
+          "taskId": {
+            "$coalesce": [
+              {
+                "$ref": "response.data.0.task_id"
+              },
+              {
+                "$ref": "response.data.task_id"
+              },
+              {
+                "$ref": "response.task_id"
+              },
+              {
+                "$ref": "response.data.0.id"
+              },
+              {
+                "$ref": "response.data.id"
+              },
+              {
+                "$ref": "response.id"
+              },
+              {
+                "$ref": "taskId"
+              }
+            ]
+          },
+          "status": {
+            "$coalesce": [
+              {
+                "$ref": "response.data.0.status"
+              },
+              {
+                "$ref": "response.data.status"
+              },
+              {
+                "$ref": "response.status"
+              },
+              "pending"
+            ]
+          },
+          "message": {
+            "$coalesce": [
+              {
+                "$ref": "response.data.0.error.message"
+              },
+              {
+                "$ref": "response.data.error.message"
+              },
+              {
+                "$ref": "response.error.message"
+              },
+              {
+                "$ref": "response.message"
+              },
+              {
+                "$ref": "response.detail"
+              }
+            ]
+          },
+          "audios": {
+            "$coalesce": [
+              {
+                "$ref": "response.audio_url"
+              },
+              {
+                "$ref": "response.audioUrl"
+              },
+              {
+                "$ref": "response.result_url"
+              },
+              {
+                "$ref": "response.url"
+              },
+              {
+                "$ref": "response.audio"
+              },
+              {
+                "$ref": "response.data.audio_url"
+              },
+              {
+                "$ref": "response.data.audioUrl"
+              },
+              {
+                "$ref": "response.data.url"
+              },
+              {
+                "$ref": "response.data.audio"
+              },
+              {
+                "$ref": "response.data.audios"
+              },
+              {
+                "$ref": "response.data.result.audios"
+              },
+              {
+                "$ref": "response.data.0.audio_url"
+              },
+              {
+                "$ref": "response.data.0.audioUrl"
+              },
+              {
+                "$ref": "response.data.0.url"
+              },
+              {
+                "$ref": "response.result.audio_url"
+              },
+              {
+                "$ref": "response.result.audioUrl"
+              },
+              {
+                "$ref": "response.result.url"
+              },
+              {
+                "$ref": "response.result.audios"
+              },
+              {
+                "$ref": "response.output.audio_url"
+              },
+              {
+                "$ref": "response.output.url"
+              },
+              {
+                "$ref": "response.output.audio"
+              },
+              {
+                "$ref": "response.data"
+              }
+            ]
+          },
+          "errorPaths": [
+            "error.code",
+            "data.error.code"
+          ],
+          "messagePaths": [
+            "error.message",
+            "data.error.message"
+          ],
+          "resultEphemeral": true
         }
       }
     ]

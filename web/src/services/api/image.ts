@@ -106,7 +106,7 @@ export async function requestGeneration(config: AiConfig, prompt: string, option
                   prompt: withSystemPrompt(requestConfig, prompt),
                   n,
                   response_format: "b64_json",
-                  watermark: false,
+                  ...(imageProfile.watermark?.supported ? { watermark: imageProfile.watermark.default } : {}),
                   ...(normalizedRequestSize ? { [normalizedRequestSize.parameter]: normalizedRequestSize.value } : {}),
               }
             : {
@@ -117,6 +117,7 @@ export async function requestGeneration(config: AiConfig, prompt: string, option
                   ...(requestSize ? { [requestSize.parameter]: requestSize.value } : {}),
                   ...(responseFormat ? { response_format: responseFormat } : {}),
                   ...(imageProfile.outputFormat.supported ? { output_format: IMAGE_OUTPUT_FORMAT } : {}),
+                  ...(imageProfile.watermark?.supported ? { watermark: imageProfile.watermark.default } : {}),
                   ...(imageProfile.transparentBackground.supported && normalizedImage.transparentBackground === "true" ? { background: "transparent" } : {}),
               };
         const responseData = isVolcengineArk ? await postVolcengineArkImage(requestConfig, payload, options) : await postChannelJSON<ImageApiResponse>(requestConfig, aiApiUrl(requestConfig, "/images/generations"), payload, options);
@@ -191,7 +192,7 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
                     prompt: withSystemPrompt(requestConfig, requestPrompt),
                     n,
                     response_format: "b64_json",
-                    watermark: false,
+                    ...(imageProfile.watermark?.supported ? { watermark: imageProfile.watermark.default } : {}),
                     ...(requestSize ? { [requestSize.parameter]: requestSize.value } : {}),
                     ...(images.length === 1 ? { image: images[0] } : images.length > 1 ? { image: images } : {}),
                 },
@@ -211,6 +212,7 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
     const responseFormat = imageResponseFormatFor(imageProfile);
     if (responseFormat) formData.set("response_format", responseFormat);
     if (imageProfile.outputFormat.supported) formData.set("output_format", IMAGE_OUTPUT_FORMAT);
+    if (imageProfile.watermark?.supported) formData.set("watermark", String(imageProfile.watermark.default));
     if (imageProfile.transparentBackground.supported && normalizedImage.transparentBackground === "true") {
         formData.set("background", "transparent");
     }

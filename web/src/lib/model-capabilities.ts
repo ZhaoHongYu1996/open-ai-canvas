@@ -96,6 +96,7 @@ export type ImageCapabilityConfig = {
     /** Protocol-declared mapping where quality values select image resolution. */
     resolutionUsesQuality?: boolean;
     transparentBackground: { supported: boolean; default: boolean };
+    watermark?: { supported: boolean; default: boolean };
     responseFormat: { supported: boolean; default?: ImageResponseFormat };
     outputFormat: { supported: boolean };
     maxOutputs: number;

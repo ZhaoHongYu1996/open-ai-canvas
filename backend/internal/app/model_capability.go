@@ -51,6 +51,7 @@ type ImageCapabilityConfig struct {
 	// values are actually resolution tiers (for example Gemini imageSize).
 	ResolutionUsesQuality bool               `json:"resolutionUsesQuality,omitempty"`
 	TransparentBackground VideoBooleanConfig `json:"transparentBackground"`
+	Watermark             VideoBooleanConfig `json:"watermark"`
 	ResponseFormat        ParameterSupport   `json:"responseFormat"`
 	OutputFormat          ParameterSupport   `json:"outputFormat"`
 	MaxOutputs            int                `json:"maxOutputs"`

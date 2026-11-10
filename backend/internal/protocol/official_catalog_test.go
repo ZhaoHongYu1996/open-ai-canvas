@@ -855,7 +855,7 @@ func TestOfficialTSAIMapsGatewayContracts(t *testing.T) {
 		t.Fatalf("TSAI MiniMax create = %#v", create)
 	}
 	body := manifestTestBody(t, create)
-	if body["model"] != textRequest.Model || body["prompt"] != textRequest.Prompt || body["duration"] != float64(5) || body["aspect_ratio"] != "16:9" || body["resolution"] != "768P" {
+	if body["model"] != textRequest.Model || body["prompt"] != textRequest.Prompt || body["duration"] != float64(5) || body["ratio"] != "16:9" || body["resolution"] != "768P" {
 		t.Fatalf("TSAI MiniMax text body = %#v", body)
 	}
 	h3OptionsCreate, err := minimax.BuildCreate(context.Background(), RequestContext{Request: GenerationRequest{
@@ -882,11 +882,14 @@ func TestOfficialTSAIMapsGatewayContracts(t *testing.T) {
 		t.Fatal(err)
 	}
 	frameBody := manifestTestBody(t, frameCreate)
-	if frameBody["first_frame_image"] != "https://cdn.example/first.png" || frameBody["last_frame_image"] != "https://cdn.example/last.png" {
-		t.Fatalf("TSAI MiniMax frames = %#v", frameBody)
+	frameConditions, _ := frameBody["conditions"].([]any)
+	if len(frameConditions) != 2 {
+		t.Fatalf("TSAI MiniMax conditions = %#v", frameBody)
 	}
-	if _, hasImages := frameBody["image_urls"]; hasImages {
-		t.Fatalf("TSAI MiniMax first/last request must not send image_urls: %#v", frameBody)
+	firstCondition, _ := frameConditions[0].(map[string]any)
+	lastCondition, _ := frameConditions[1].(map[string]any)
+	if firstCondition["type"] != "image" || firstCondition["uri"] != "https://cdn.example/first.png" || firstCondition["role"] != "first_frame" || lastCondition["type"] != "image" || lastCondition["uri"] != "https://cdn.example/last.png" || lastCondition["role"] != "last_frame" {
+		t.Fatalf("TSAI MiniMax frame conditions = %#v", frameConditions)
 	}
 
 	_, err = minimax.BuildCreate(context.Background(), RequestContext{Request: GenerationRequest{
@@ -967,7 +970,7 @@ func TestOfficialTSAIMapsGatewayContracts(t *testing.T) {
 	}
 
 	seedreamCreate, err := seedream.BuildCreate(context.Background(), RequestContext{Request: GenerationRequest{
-		Model: "doubao-seedream-4-5-251128", Prompt: "超现实主义的星际列车。", AspectRatio: "16:9",
+		Model: "doubao-seedream-4-5-251128", Prompt: "超现实主义的星际列车。", AspectRatio: "16:9", Resolution: "2K",
 		Images: []MediaReference{
 			{URL: "https://cdn.example/person.png", Order: 1},
 			{URL: "https://cdn.example/clothes.png", Order: 2},
@@ -981,7 +984,7 @@ func TestOfficialTSAIMapsGatewayContracts(t *testing.T) {
 	}
 	seedreamBody := manifestTestBody(t, seedreamCreate)
 	images, _ := seedreamBody["image"].([]any)
-	if seedreamBody["size"] != "2560x1440" || seedreamBody["sequential_image_generation"] != "disabled" || seedreamBody["response_format"] != "url" || seedreamBody["stream"] != false || len(images) != 2 || images[0] != "https://cdn.example/person.png" {
+	if seedreamBody["resolution"] != "2k" || seedreamBody["ratio"] != "16:9" || seedreamBody["size"] != nil || seedreamBody["sequential_image_generation"] != nil || seedreamBody["response_format"] != nil || seedreamBody["stream"] != nil || len(images) != 2 || images[0] != "https://cdn.example/person.png" {
 		t.Fatalf("TSAI Seedream body = %#v", seedreamBody)
 	}
 	seedreamCreated, err := seedream.ParseCreate(context.Background(), []byte(`{"id":"img-tsai-1","status":"queued","data":[]}`))
