@@ -1,4 +1,7 @@
 # CHANGELOG
+## v1.8.5-rc.1
+- 预览版本：包含 v1.8.5 的 Dev 当前变更，供 Host Updater 升级验证使用。
+- 升级说明：数据库目标版本由 Schema 98 升至 Schema 100，新增访问统计与 MCP 数据表，并补齐 SQLite → PostgreSQL 的 MCP 表迁移。升级前备份数据库及部署配置，完成迁移校验，并同步更新 Web、Backend 与 yingce-agent；回滚需恢复与旧版本匹配的数据库备份。
 ## v1.8.4-rc.3
 - 画布视频参数：调整参数设置弹层的层级，改善视频参数面板与其他画布浮层的显示关系。
 - 预览版本：用于验证视频参数弹层显示。请同步更新 Web、Backend 与 yingce-agent，升级前备份数据库及部署配置。
