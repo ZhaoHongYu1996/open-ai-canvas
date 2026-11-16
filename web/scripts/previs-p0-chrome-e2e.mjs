@@ -150,9 +150,22 @@ async function launchChrome(chromePath, cdpPort, profileDir) {
  * 只放行 ALLOWED_NOISE 精确匹配，其他异常/console error/网络失败全部记入 problems。
  */
 async function connectCdp(cdpPort) {
-    const list = await (await fetch(`http://127.0.0.1:${cdpPort}/json/list`)).json();
-    const target = list.find((t) => t.type === "page");
-    if (!target) throw new Error("No CDP page target found");
+    const deadline = Date.now() + 10000;
+    let target = null;
+    let lastError = null;
+    while (Date.now() < deadline && !target) {
+        try {
+            const response = await fetch(`http://127.0.0.1:${cdpPort}/json/list`);
+            if (!response.ok) throw new Error(`CDP target list returned HTTP ${response.status}`);
+            const list = await response.json();
+            target = list.find((item) => item.type === "page") || null;
+            if (!target) lastError = new Error("No page target is available yet");
+        } catch (error) {
+            lastError = error;
+        }
+        if (!target) await sleep(200);
+    }
+    if (!target) throw new Error(`No CDP page target found before timeout: ${lastError?.message || "unknown error"}`);
 
     const ws = new WebSocket(target.webSocketDebuggerUrl);
     await new Promise((resolve, reject) => {
@@ -904,7 +917,7 @@ async function shotOutputs(cdp, baseUrl) {
     assert(result.maxColorError <= 2, "G5 beauty matches default framebuffer tone mapping", `max error=${result.maxColorError}`);
     const recording = await cdp.evaluate(`(async () => {
         const handle=window.__previsCaptureTest.handle;
-        const blob=await handle.recordVideo(.6,12,'depth',{longEdge:320});
+        const blob=await handle.recordVideo(2,12,'depth',{longEdge:320});
         const video=document.createElement('video'),url=URL.createObjectURL(blob);video.muted=true;
         try { await new Promise((resolve,reject)=>{video.onloadeddata=resolve;video.onerror=()=>reject(new Error('recording cannot decode'));video.src=url;});
             const abort=new AbortController();const pending=handle.recordVideo(2,12,'beauty',{longEdge:320,signal:abort.signal});abort.abort();
