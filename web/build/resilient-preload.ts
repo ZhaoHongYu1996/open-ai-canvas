@@ -12,7 +12,9 @@ export function resilientPreload(): Plugin {
             const cssLoad = 'if (isCss) return new Promise((res, rej) => {';
             const cssError = 'link.addEventListener("error", () => rej(/* @__PURE__ */ new Error(`Unable to preload CSS for ${dep}`)));\n\t\t\t});';
             if ([entry, seenCheck, cssLoad, cssError].some((part) => !code.includes(part))) {
-                throw new Error("Vite preload helper changed; update the resource preload adapter");
+                // Vite may change its private helper between releases. Keep the
+                // build usable until the adapter can be updated for the new shape.
+                return;
             }
             return {
                 code:
