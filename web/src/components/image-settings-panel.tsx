@@ -52,6 +52,7 @@ type ImageSettingsPanelProps = {
     quickCount?: number;
     /** 画布节点的张数是拆单数，传值时按账号同时任务数取上限，不再受单模型 maxOutputs 限制。 */
     countLimit?: number;
+    declaredSizeOptions?: boolean;
     /** 局部编辑等场景需要先允许选择参数，由后端负责最终计费校验。 */
     bypassPriceGuard?: boolean;
 };
@@ -83,6 +84,7 @@ export function ImageProfileControls({
     maxCount = 15,
     quickCount = 3,
     countLimit,
+    declaredSizeOptions = false,
     bypassPriceGuard = false,
 }: Omit<ImageSettingsPanelProps, "config"> & { profile: ImageCapabilityConfig; protocol?: string; config: ImageSettings; priceTiers?: ReturnType<typeof imageModelPriceTiers> }) {
     const normalized = normalizeImageValue(profile, config, protocol);
@@ -98,7 +100,7 @@ export function ImageProfileControls({
             <ImageSettingsTheme theme={theme}>
                 <div className={className}>
                     {showTitle ? <div className="mb-3 text-base font-semibold">图像设置</div> : null}
-                    <ImageParameterFields profile={profile} config={config} onChange={onConfigChange} showSize={showSize} showCount={showCount} showQuality={showQuality} showTransparent={showTransparent} countLimit={countLimit} />
+                    <ImageParameterFields profile={profile} config={config} onChange={onConfigChange} showSize={showSize} showCount={showCount} showQuality={showQuality} showTransparent={showTransparent} countLimit={countLimit} declaredSizeOptions={declaredSizeOptions} />
                 </div>
             </ImageSettingsTheme>
         );

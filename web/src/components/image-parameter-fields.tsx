@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { ImageSizePresetsEditor } from "./image-size-presets-editor";
 import { ImageSizePicker } from "./image-size-picker";
 import { protocolImageSizePresets } from "@/lib/protocol-image-presets";
-import { imageSingleSizeTier, imageSizeConfigWithPresets, imageSizePresets } from "@/lib/image-size-presets";
+import { imageDeclaredSizePresets, imageSingleSizeTier, imageSizeConfigWithPresets, imageSizePresets } from "@/lib/image-size-presets";
 import { Select } from "@/components/ui/base/select";
 import { commonImageParameter, imageHostControls, imageParameterAccepts, parseImageParameters, updateImageParameterSchema, updateImageParameterSize, type ImageParameter, type ImageParameterValue } from "@/lib/image-parameters";
 import type { ImageCapabilityConfig } from "@/lib/model-capabilities";
@@ -138,6 +138,7 @@ export function ImageParameterFields({
     showQuality = true,
     showTransparent = true,
     countLimit,
+    declaredSizeOptions = false,
 }: {
     profile: ImageCapabilityConfig;
     config: ImageSettings;
@@ -148,6 +149,7 @@ export function ImageParameterFields({
     showTransparent?: boolean;
     /** 画布与创作页的张数是拆单数，传值时按账号同时任务数取上限，不再受单模型 maxOutputs 限制。 */
     countLimit?: number;
+    declaredSizeOptions?: boolean;
 }) {
     const preserved = preserveImageSettings(profile, config);
     const values = {
@@ -163,7 +165,7 @@ export function ImageParameterFields({
     };
     const sizeField = profile.parameters?.find((p) => p.name === "size");
     const usesSizePresets = profile.resolution.supported || profile.size.parameter === "size" || sizeField?.encoding === "pixels" || profile.parameters?.some((p) => p.name === "imageResolution");
-    const groupedSize = showSize && profile.size.parameter !== "none" && usesSizePresets && imageSizePresets(profile).length > 0;
+    const groupedSize = showSize && profile.size.parameter !== "none" && usesSizePresets && (imageSizePresets(profile).length > 0 || (declaredSizeOptions && imageDeclaredSizePresets(profile).length > 0));
     const fields = (profile.parameters || []).filter(
         (p) =>
             p.enabled !== false &&
@@ -178,6 +180,7 @@ export function ImageParameterFields({
             {groupedSize ? (
                 <ImageSizePicker
                     profile={profile}
+                    declaredSizeOptions={declaredSizeOptions}
                     size={String(values.size ?? profile.size.default)}
                     imageResolution={String(values.imageResolution ?? profile.resolution.default)}
                     quality={String(values.quality ?? profile.quality.default)}

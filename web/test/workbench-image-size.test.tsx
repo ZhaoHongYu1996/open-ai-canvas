@@ -63,6 +63,15 @@ describe("图片工作台的参数声明尺寸兜底", () => {
         expect(plain).toContain("未配置预设尺寸");
     });
 
+    test("画布图片参数可同时显示声明的分辨率和宽高比", () => {
+        const profile = declaredProfile();
+        const panel = renderToStaticMarkup(<ImageParameterFields profile={profile} config={{ size: "16:9", imageResolution: "2K" } as AiConfig} declaredSizeOptions onChange={() => {}} />);
+        expect(panel).toContain("分辨率");
+        expect(panel).toContain("宽高比");
+        expect(panel).toContain('title="16:9 · 2752 × 1536"');
+        expect(panel).not.toContain('role="group" aria-label="画面比例"');
+    });
+
     test("选 16:9 + 2K 后的请求值是声明原值，可直接用于提交与报价", () => {
         const profile = declaredProfile();
         const preset = imageDeclaredSizePresets(profile).find((item) => item.tier === "2k" && item.ratio === "16:9")!;

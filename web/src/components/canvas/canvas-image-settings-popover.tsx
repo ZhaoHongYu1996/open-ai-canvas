@@ -37,7 +37,7 @@ export function CanvasImageSettingsPopover({ config, onConfigChange, showCount =
     if (!parts.length && !profile.transparentBackground.supported && !profile.parameters?.some((p) => p.enabled !== false)) return null;
     return (
         <CanvasSettingsPopover {...popover} label={t("canvasB.imageSettings.label")} summary={parts.join(" · ") || t("canvasB.imageSettings.background")} width={420}>
-            <ImageSettingsPanel config={config} onConfigChange={onConfigChange} theme={theme} showCount={showCount} quickCount={3} className="space-y-3" countLimit={countLimit} />
+            <ImageSettingsPanel config={config} onConfigChange={onConfigChange} theme={theme} showCount={showCount} quickCount={3} className="space-y-3" countLimit={countLimit} declaredSizeOptions />
         </CanvasSettingsPopover>
     );
 }
