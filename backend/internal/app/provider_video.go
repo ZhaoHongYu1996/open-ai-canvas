@@ -41,9 +41,6 @@ func runVideoTaskWithPolicy(ctx context.Context, input canvasGenerationInput, po
 	}
 	// 已有官方声明式插件的 InterfaceType 只走适配器。未注入 registry 时补官方包，
 	// 显式空 registry 则报“插件未安装”，不再回退到手写协议。
-	if input.Config.InterfaceType == string(model.ChannelInterfaceOpenAiBxinle) {
-		return runOpAIBxinleVideoTask(ctx, input)
-	}
 	ctx = ensureOfficialProtocolAdapter(ctx, input.Config.InterfaceType)
 	if adapter, ok := declarativeProtocolAdapterForContext(ctx, input.Config.InterfaceType); ok {
 		return runProtocolAdapterTaskWithPolicy(ctx, input, adapter, pollPolicy)

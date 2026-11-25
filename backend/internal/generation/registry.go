@@ -78,12 +78,6 @@ func OfficialDeclarativeVideoInterface(interfaceType string) (string, bool) {
 		return "即梦", true
 	case string(model.ChannelInterfaceNewAPIVideo):
 		return "OpenAI Videos", true
-	case string(model.ChannelInterfaceOpenAiBxinlePlugin):
-		return "OpenAiBxinle", true
-	case "tsai-minimax-h3":
-		return "TSAI MiniMax H3", true
-	case "tsai-seedance-mini":
-		return "TSAI Seedance 2.0 mini", true
 	default:
 		return "", false
 	}
@@ -103,8 +97,6 @@ func OfficialDeclarativeImageInterface(interfaceType string) (string, bool) {
 		return "火山方舟 Agent Plan 图片", true
 	case string(model.ChannelInterfaceVolcengineJiMengImage):
 		return "即梦图片", true
-	case "tsai-seedream":
-		return "TSAI Seedream 4.5", true
 	default:
 		return "", false
 	}

@@ -73,23 +73,20 @@ func (m *Manager) currentVersion() (string, error) {
 }
 
 func (m *Manager) prepareTargetCompose(targetVersion string, sources Sources) (string, error) {
-	var downloadErrors []string
-	var data []byte
-	for _, url := range composeDownloadURLs(m.config.Repository, targetVersion, m.config.ComposeFile) {
-		candidate, err := m.downloadReleaseAsset(url, 2<<20, sources)
-		if err != nil {
-			downloadErrors = append(downloadErrors, fmt.Sprintf("%s：%v", url, err))
-			continue
-		}
-		if len(candidate) == 0 {
-			downloadErrors = append(downloadErrors, fmt.Sprintf("%s：文件为空", url))
-			continue
-		}
-		data = candidate
-		break
+	url := fmt.Sprintf("https://raw.githubusercontent.com/%s/%s/%s", m.config.Repository, targetVersion, m.config.ComposeFile)
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+	response, err := m.githubGet(ctx, url, sources, "")
+	if err != nil {
+		return "", fmt.Errorf("下载目标 Compose：%w", err)
+	}
+	defer response.Body.Close()
+	data, err := io.ReadAll(io.LimitReader(response.Body, (2<<20)+1))
+	if err != nil {
+		return "", err
 	}
 	if len(data) == 0 {
-		return "", fmt.Errorf("下载目标 Compose：%s", strings.Join(downloadErrors, "；"))
+		return "", errors.New("目标 Compose 文件为空")
 	}
 	if len(data) > 2<<20 {
 		return "", errors.New("目标 Compose 文件超过允许大小")
@@ -99,13 +96,6 @@ func (m *Manager) prepareTargetCompose(targetVersion string, sources Sources) (s
 		return "", fmt.Errorf("保存目标 Compose：%w", err)
 	}
 	return path, nil
-}
-
-func composeDownloadURLs(repository, targetVersion, composeFile string) []string {
-	return []string{
-		fmt.Sprintf("https://github.com/%s/releases/download/%s/%s", repository, targetVersion, composeFile),
-		fmt.Sprintf("https://raw.githubusercontent.com/%s/%s/%s", repository, targetVersion, composeFile),
-	}
 }
 
 func (m *Manager) preflight(composePath, targetVersion string, sources Sources) error {
@@ -561,11 +551,14 @@ func (m *Manager) restoreDatabase(backup Backup) error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), m.config.StepTimeout)
 	defer cancel()
-	args := []string{"compose", "--env-file", m.envPath(), "-f", m.composePath(), "exec", "-T", "postgres", "pg_restore", "-U", postgresUser, "-d", postgresDB, "--no-owner", "--no-privileges"}
+	args := []string{"compose", "--project-name", composeProjectName(m.config.InstallDir), "--env-file", m.envPath(), "-f", m.composePath(), "exec", "-T", "postgres", "pg_restore", "-U", postgresUser, "-d", postgresDB, "--no-owner", "--no-privileges"}
 	var stderr bytes.Buffer
 	command := execCommandWithInput{runner: m.runner, input: reader}
 	if err := command.Run(ctx, "docker", args, []string{"CANVAS_IMAGE_TAG=" + strings.TrimPrefix(backup.Version, "v")}, io.Discard, &stderr); err != nil {
-		return fmt.Errorf("恢复 PostgreSQL：%s", strings.TrimSpace(stderr.String()))
+		if detail := strings.TrimSpace(stderr.String()); detail != "" {
+			return fmt.Errorf("恢复 PostgreSQL：%s：%w", detail, err)
+		}
+		return fmt.Errorf("恢复 PostgreSQL：%w", err)
 	}
 	return nil
 }

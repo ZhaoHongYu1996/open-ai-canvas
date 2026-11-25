@@ -80,7 +80,6 @@ func Builtins() *Registry {
 	registry, err := NewRegistry(
 		openAIChatAdapter(), openAIResponsesAdapter(), claudeAdapter(),
 		openAIVideosAdapter(), newAPIChannel1Adapter(), newAPIVideosAdapter(), xAIVideosAdapter(), arkVideosAdapter(), jimengVideosAdapter(), geminiVeoAdapter(), novitaVideosAdapter(), miniMaxVideosAdapter(),
-		openAiBxinleAdapter(),
 		agnesAdapter(),
 	)
 	if err != nil {
@@ -413,13 +412,6 @@ func miniMaxVideosAdapter() Adapter {
 		mergeExtra(body, r.Extra, "model", "prompt", "duration", "content", "resolution", "aspect_ratio")
 		return jsonSpec(http.MethodPost, "/v2/video_generation", body), nil
 	})
-}
-
-func openAiBxinleAdapter() Adapter {
-	info := metadata("OpenAiBxinle", "OpenAiBxinle / ZeroFA Seedance", "ZeroFA", CapabilityVideo, "POST /v1/videos", "GET /v1/videos/{id}", "application/json")
-	info.Parameters = videoParams()
-	info.Execution = "host:opaibxinle"
-	return builtinAdapter{info: info}
 }
 
 func videoAdapter(info Metadata, create func(GenerationRequest) (RequestSpec, error)) Adapter {

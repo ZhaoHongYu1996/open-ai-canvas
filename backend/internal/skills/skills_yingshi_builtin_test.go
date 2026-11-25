@@ -1,7 +1,6 @@
 package skills
 
 import (
-	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -69,8 +68,7 @@ func TestYingshiBuiltinBundleCompatibility(t *testing.T) {
 		if !strings.HasSuffix(path, "/__init__.py") {
 			executableCount++
 		}
-		// Git may check these embedded scripts out with CRLF on Windows.
-		fileHash := sha256.Sum256(bytes.ReplaceAll(target.archive.Files[path], []byte("\r\n"), []byte("\n")))
+		fileHash := sha256.Sum256(target.archive.Files[path])
 		_, _ = fmt.Fprintf(digest, "%s\t%s\n", path, hex.EncodeToString(fileHash[:]))
 	}
 	if executableCount != 31 {

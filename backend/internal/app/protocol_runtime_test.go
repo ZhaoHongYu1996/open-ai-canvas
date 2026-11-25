@@ -88,44 +88,6 @@ func TestPluginViewIncludesDocumentationForEveryOfficialProtocol(t *testing.T) {
 	}
 }
 
-func TestUploadableTSAICopyInstallsBesideOfficialPackage(t *testing.T) {
-	packagePath := filepath.Join("..", "..", "..", "plugin-packages", "uploadable", "tsai-upload.yingce-plugin")
-	packageData, err := os.ReadFile(packagePath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	pkg, err := protocol.ParsePluginPackage(packageData)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if pkg.Manifest.Metadata.ID == "tsai" {
-		t.Fatal("uploadable package must not reuse the built-in TSAI plugin ID")
-	}
-
-	center, err := newPluginRuntime(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	installed, err := center.install(packageData, filepath.Base(packagePath))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if installed.Manifest.ID != pkg.Manifest.Metadata.ID || installed.Source != PluginOriginUploaded || installed.Status != "enabled" {
-		t.Fatalf("installed uploadable TSAI plugin = %#v", installed)
-	}
-
-	officialPath := filepath.Join("..", "..", "..", "plugin-packages", "tsai.yingce-plugin")
-	officialPackage, err := os.ReadFile(officialPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = center.install(officialPackage, filepath.Base(officialPath))
-	var appErr *AppError
-	if !errors.As(err, &appErr) || appErr.Status != http.StatusConflict || !strings.Contains(appErr.Message, "不能通过上传覆盖") {
-		t.Fatalf("uploading the built-in TSAI package error = %v, want a visible conflict", err)
-	}
-}
-
 func TestPluginRuntimeRefreshesExistingOfficialPackageDocumentation(t *testing.T) {
 	packagePath := filepath.Join("..", "..", "..", "plugin-packages", "openai-images.yingce-plugin")
 	packageData, err := os.ReadFile(packagePath)
@@ -176,6 +138,41 @@ func TestPluginRuntimeRefreshesExistingOfficialPackageDocumentation(t *testing.T
 		return
 	}
 	t.Fatal("refreshed OpenAI Images plugin is missing")
+}
+
+func TestSeedanceUpgradeRetainsInstalledRelease(t *testing.T) {
+	const id = "seedance-videos-compatible"
+	const deployedDigest = "8d61bc8635c3becf7fdd59e38dd763e2ee160a2287f0bded4494135aeb626e4d"
+	for _, test := range []struct{ fixture, digest, status string }{
+		{"seedance-2.0.1", "1d875310d9ccffdbe7272a452761d3f5e268c3719cdff643298cc24146c5ac91", "disabled"},
+		{"seedance-2.0.1-v1.8.7.2", "a95060565059b023c3d0d413bb746bc777f2056b4cc3b7b2a14e953bdcc8baa3", "enabled"},
+	} {
+		t.Run(test.fixture, func(t *testing.T) {
+			dataDir := t.TempDir()
+			t.Setenv("CANVAS_OFFICIAL_PLUGIN_DIR", filepath.Join("testdata", test.fixture))
+			previous, err := newPluginRuntime(dataDir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := previous.setEnabled(id, test.status == "enabled"); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("CANVAS_OFFICIAL_PLUGIN_DIR", filepath.Join("..", "..", "..", "plugin-packages"))
+			for range 2 {
+				current, err := newPluginRuntime(dataDir)
+				if err != nil {
+					t.Fatal(err)
+				}
+				installed := current.plugins[id]
+				if installed.Status != test.status || installed.Metadata.Version != "2.0.2" || installed.SHA256 != deployedDigest {
+					t.Fatalf("installed %s@%s (%s), status %q", id, installed.Metadata.Version, installed.SHA256, installed.Status)
+				}
+				if _, err := current.verifiedRequestManifest(id, requestPackageVersion{Version: "2.0.1", SHA256: test.digest}, test.status == "enabled"); err != nil {
+					t.Fatalf("resolve original release: %v", err)
+				}
+			}
+		})
+	}
 }
 
 func TestBundledWorkflowPluginsControlAvailability(t *testing.T) {

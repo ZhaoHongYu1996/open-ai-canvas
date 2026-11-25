@@ -109,7 +109,9 @@ Agent 通过 `mcp_list_tools` 分三步读取连接目录、指定连接的工�
 
 安装方式和限制见 [MCP 连接与市场](./agent-mcp)。
 
-检测与调用的限频、并发和存储拒绝使用真实 429 / 403 错误，协调器不可用时拒绝新外部操作。管理员资源策略 `task.agentMaxRunsPerUser` 默认 5，范围 1–64；新安装 `task.agentMaxSessions` 默认 8。`GET/PUT /admin/settings/runtime-policy` 的 `resource.agentHistoryMB` 设置每账号 Agent 历史容量（1–999999 MiB；旧配置缺省为 256 MiB）。用户详情 `storageUsage.agentBytes/agentLimitBytes` 显示用量和策略上限，独立于文件空间及 MCP 的 64 MiB 额度。
+检测与调用的限频、并发和存储拒绝使用真实 429 / 403 错误，协调器不可用时拒绝新外部操作。管理员资源策略 `task.agentMaxRunsPerUser` 默认 5，范围 1–64；新安装 `task.agentMaxSessions` 默认 8。`GET/PUT /admin/settings/runtime-policy` 的 `resource.agentHistoryMB` 设置每账号 Agent 历史容量（1–999999 MiB；旧配置缺省为 256 MiB），`resource.agentHistoryGlobalMB` 设置所有账号热 Agent 历史池上限（默认 8192 MiB）。热池超限时先整理超过一分钟的旧终态，仍不足才拒绝写入。用户详情 `storageUsage.agentBytes/agentLimitBytes` 显示用量和每账号策略上限，独立于文件空间及 MCP 的 64 MiB 额度。
+
+旧站只设置了每账号额度时，升级后全站热历史池取 8192 MiB 和原每账号额度中的较大值。已显式设置全站额度的站点继续使用原值，管理员保存时全站额度必须大于或等于每账号额度。
 
 `DELETE /admin/users/:id/agent-history` 仅限管理员。成功返回 `data.freedBytes`；清理目标账号全部 Agent 历史、扣减账本并记录管理审计。只要存在未结束、待收尾或刚预留的轮次，返回 409 且不删除任何记录。清理不可恢复，不影响已有画布、素材、任务和账务。
 
@@ -253,6 +255,8 @@ Agent 通过 `mcp_list_tools` 分三步读取连接目录、指定连接的工�
 | 仅音频 | `audio_to_video` |
 
 图片的 `role=first_frame/last_frame` 表示帧约束；`reference` 或未指定角色表示普通参考，不能静默改成首帧。模式、素材数量和参数共同参与模型能力校验及价格档选择；不支持的组合在创建任务和计费前拒绝。执行输入的 `metadata.videoEditOperation` 与任务操作保持一致，并保留帧素材标识。浏览器自定义渠道的工作台任务使用同一模式规则，其他入口沿用各自的意图解析。
+
+后台渠道模型可分别设置参考视频（`video.references.maxVideos`、`video.references.maxTotalVideoDurationSeconds`）和参考音频（`video.references.maxAudios`、`video.references.maxTotalAudioDurationSeconds`）的最多段数与合计时长上限。每次请求对视频和音频各自累加已知毫秒数，超过对应的段数或合计时长上限返回 400。省略合计上限时沿用该模型的官方预设，显式设置 `0` 表示不设合计上限。旧配置的单段时长需要通过新的合计时长字段重新设置。
 
 ## 工作台批量生成的批次标识
 
@@ -422,6 +426,8 @@ handle 放错端点、格式错误或行 ID 不存在时，工具错误回执提
 路径前缀是 `/api`。前后端一起发布，不按 `/api/v1`、`/api/v2` 做路径版本。不兼容变更随版本一起改接口和调用方。
 
 机器可读规范：运行中的 `GET /api/openapi.yaml`，源文件 `backend/internal/handler/openapi.yaml`。前端 TypeScript 仍走 `web/src/services/api` 的 `http`，不从 OpenAPI 生成客户端。
+
+电商 Agent 的 `quote`、`analyze`、`recommend`、`generate` 和 `generate/stream` 五个 POST 入口共享 `EcommerceAgentRequest` 请求体。在 `backend/` 运行 `REDOCLY_TELEMETRY=off npx --yes @redocly/cli@2.83.0 lint internal/handler/openapi.yaml --config internal/handler/redocly.yaml`，可使用 `no-unresolved-refs` 规则检查规范引用。
 
 出站模型服务域名解析失败返回 HTTP / `code: 502`、`reason: upstream_dns_failed`，不归类为用户参数错误。公开消息不包含上游域名、DNS 服务器或请求 URL；原始解析错误仅保留在内部错误链。此分类不会切换渠道或放宽 SSRF 校验；上下文取消仍按取消处理。普通任务不自动重试；Agent 单步模型调用把它视为临时网络错误，沿用单步重试上限（首次失败后最多再试 3 次，指数退避），仍失败才结束本轮。
 
@@ -612,7 +618,7 @@ CANVAS_BACKEND_DATA_DIR=/明确的数据目录 ./migrate-schema repair-canvas-re
 
 文本模型额外返回 `textWire`（`chat-completion` / `responses` / `claude-api`），由协议插件的 `create.path` 识别，不看协议 ID；识别不出时省略。浏览器直连系统代理的提示词优化、编辑器助手和美术点评按它选择 `/chat/completions`、`/responses` 或 `/messages`。`GET /plugins/catalog` 的 provider 同样返回 `textWire`，并在插件 `auth.secretField` 指向 Secret Key 时返回 `requiresSecretKey: true`。系统渠道代理只放行内置合同或插件声明的 POST 路径，出站鉴权按插件 `auth` 声明写，详见 [统一插件运行时](/docs/backend/protocol-plugins)。
 
-`GET /plugins/catalog?scope=admin.system-channel` 在 provider 的 `releases[]` 返回已安装的可选发行版，包含 `pluginId`、`version`、`sha256`、`current`、创建与轮询路径，以及该版声明的图片参数、工作流、`videoModes`、`videoOutputs`。管理端保存、测试或导入渠道模型使用 `protocol` 和 `protocolRelease`（完整 SHA-256）。同一渠道可同时绑定多个版本。系统任务创建时由服务端从所选模型解析版本。
+`GET /plugins/catalog?scope=admin.system-channel` 在 provider 的 `releases[]` 返回已安装的可选发行版，包含 `pluginId`、`version`、`sha256`、`current`、创建与轮询路径，以及该版声明的图片参数、工作流、`videoModes`、`videoOutputs`。管理端保存、测试或导入渠道模型使用 `protocol` 和可选的 `protocolRelease`（完整 SHA-256）；未提供版本时按当前启用发行版解析。系统任务创建时由服务端从所选模型解析版本并写入任务绑定，明确填写的旧版摘要保持不变。
 
 渠道模型创建、更新、管理列表、公开目录和会话模型价格信息均使用 `description` 表达模型描述。服务端去除首尾空白后限制为 500 字，允许空字符串清除描述；无管理员权限或超长内容拒绝保存。创作端二级选项常驻展示该字段，不依赖悬浮 Tooltip；未填写的系统模型不按名称生成宣传文案。
 
@@ -684,6 +690,8 @@ Token 报价的 `estimated` 为 `true`，`quantity` 是预留 Token 数。`inten
 新快照仅保存脱敏提示词、名称、编号、角色和原始资源身份，不保存密钥、请求头、外部链接、签名 URL 或内嵌媒体。方舟 `asset://` 引用只有在原始资源与当前用户的素材绑定一致时才提供预览。旧日志只使用能够确认属于同次请求的任务输入或已保存报文；原始素材没有保存、已删除或无法证明来源时返回不可用说明，不根据当前画布猜测，不在查看详情时访问外部 URL。
 
 `GET /admin/billing-orders` 的每条订单额外返回 `userDisplayName`、`userAccount`，按当前页用户 ID 批量读取；字段不入库，普通用户的订单接口不返回。
+
+管理员人工结算按秒音频订单时，服务端核对原任务、活动订单、付款账户和已交付的首个音频资源，从完整原件解码得到时长，再按现行规则向上取整到秒。音频不可核实、余额不足或超出授权上限时，响应给出原因，订单保留原状态。结算、核对依据与审计记录一起提交。
 
 ## 用户任务计费与作品花费口径
 
@@ -787,6 +795,8 @@ operations 的结构化配额在提交事务内实时统计账号的素材/画�
 - `GET /agent/conversations?canvasId=&limit=100&before=` 只读查询当前用户在该画布中参与过的对话，返回 `{ items, nextCursor? }`。每项包含 `id`（现有 `conversationId`）、`canvasId`、`title`、`latestRunId`、`status`、`revision`、`cleanupPending` 和时间；按最新轮 `createdAt`、`id` 倒序。对话换绑画布后，目录摘要仍取整个对话的最新轮次，不能使用旧画布内的最后一轮。画布必须属于当前用户。
 - `GET /agent/conversations/:id/runs?limit=100&after=` 返回 `{ items, nextCursor? }`，按 `createdAt`、`id` 升序恢复同一用户、同一对话的全部轮次，包括跨页面的轮次。两处 `limit` 为 1–100，分页游标直接回传服务端的 `nextCursor`。运行视图增加 `conversationId`、`userPrompt`、`idempotencyKey`，供另一设备恢复用户消息并去重；每轮仍只返回一页事件。首次恢复用 `GET /agent/runs/:id?fromStart=true&sinceSeq=0&eventLimit=500` 从第一条事件开始，再以 `latestSeq` 作为后续 `sinceSeq`，直到追平 `eventCount`；默认不带 `fromStart` 的尾部窗口行为不变。客户端已恢复过某轮时，应把本机从 seq=1 连续的事件前缀与列表尾部窗口合并：合并后追平 `eventCount` 就不再请求，否则从前缀末尾按 `sinceSeq` 增量读取，不能因为尾部窗口不从 1 开始而回到 `sinceSeq=0`。读取接口不创建模型或媒体任务。
 - `GET /agent/conversations/:id` 返回单个对话的目录项（字段同上），只读控制列、不载入事件，`latestRunId`/`status`/`revision`/`cleanupPending` 取该对话全局最新一轮；会话不存在或不属于当前用户返回 404。前端轮询时，已选中但不在当前画布目录里的对话用它判断是否变化，未变化就复用本机快照，不再每轮重读全部轮次。
+- `DELETE /agent/conversations/:id` 删除当前用户这一整段对话的 Agent 历史。只允许删除已结束且已完成收尾的轮次，归档副本、事件、消息、Pi 会话和 Agent 撤销快照一并删除；任务、画布、素材和账务记录保留。活动或待收尾轮次返回 409，跨用户或不存在的对话返回 404。前端确认删除后同时清理本机对话、待确认提交和排队消息。
+- `POST /agent/conversations/:id/compact` 将对话中已结束轮次的热历史压缩为 gzip 冷归档，释放账号 Agent 热账本空间。操作幂等，返回 `data.freedBytes`；归档仍可用于历史读取，归档后的运行不再支持画布撤销。服务端写入达到额度时会优先整理超过一分钟的旧终态轮次，整理失败会如实返回存储错误。
 - 同一对话只允许从最新终态轮次接续。另一设备已经提交后续轮次时，旧父轮新请求返回 409，`reason: agent_conversation_stale_parent`，客户端先同步历史，不能自动重发。该检查与任务创建、积分预留同事务串行，覆盖新子轮尚未保存执行检查点的间隙；原请求的幂等回放仍先执行，画布独占和防重复生成规则保持。
 - `POST /agent/runs/:id/interjections` 向**正在运行**的轮次插入一句话，不新建轮次、不产生新的扣费身份。请求 `{ text, messageId }`，`text` 最多 4000 字符；同一 `messageId` 幂等。插话在下一次模型调用前注入；运行已结束返回 409 `agent_interjection_run_finished`，前端把这条留在本机队列首位作为下一轮发送；运行状态并发写冲突返回 409 `agent_run_state_busy`（可重试）。`DELETE /agent/runs/:id/interjections/:messageId` 撤回尚未送达的插话，已送达或本轮已结束返回 409 `agent_interjection_already_delivered`；服务端记住撤回过的 `messageId`，再次用它插话会按幂等忽略，所以前端把撤回的原文以新 ID 放回队列。步数耗尽或运行失败时发出 `user_interjection_dropped`，不会静默吞掉，也不会自动替用户开新一轮。
 - 请求字段包括 `canvasId`（空字符串为未绑定画布的对话）、`prompt`、受管 `logicalModelId` 或 `channelId` + `channelModelKey`、`permissionMode: "read_only" | "request_approval" | "auto"`、`reasoningMode`、`profileRevision`、`pinnedSkillIds`、`contextScope: [] | ["canvas"]`、`focusNodeIds`（最多 8 个）、`focusNodeOmittedCount`、`budget: { maxCredits, maxGenerationTasks, maxVideoSeconds, maxSteps }` 和 `idempotencyKey`。`pinnedSkillIds` 接受对话固定的技能和消息中 `@[skill:ID]` 点名的技能，合计最多 16 个，均须已安装且启用。其他允许自动使用的技能可按需检索。前端多选超过 8 个节点时保留前 8 个并报告省略数量。未绑定画布时上下文和焦点必须为空。旧字段 `skillIds`、密钥、自定义 URL、客户端历史和未知字段均被拒绝。
@@ -848,7 +858,7 @@ operations 的结构化配额在提交事务内实时统计账号的素材/画�
 - 运行详情的事件**分页**：事件全量在 `cloud_agent_event_records`（append-only，主键 `run_id` + `sequence`），运行详情默认只返回**尾部一窗**（最新 40 条），并同时给出四个位置字段：`eventSeqBase`（本次返回的首条事件之前已入库的条数，不变量是 `events[i].seq == eventSeqBase + i + 1`）、`eventCount`（该轮次累计事件条数）、`latestSeq`（本次返回的最后一条序号，可直接作为下次 `sinceSeq`）、`eventsTruncated`（还有更早的记录没随本次返回）。不返回事件时 `eventsTruncated` 为 false，`eventSeqBase` 退回内存窗口在整条日志里的偏移。
 - 运行详情查询参数：`?sinceSeq=<seq>` 只返回该序号**之后**的事件（增量 / 断线重连，单次最多 500 条，按 seq 升序）；`?eventLimit=<n>` 覆盖默认页大小，取值 1–500，大于窗口时由服务端从事件表往前补页。两个参数都必须是整数，越界或非法返回 400；游标追平或越界时返回空 `events` 而不是报错。读取一律走 `(run_id, sequence)` 的 keyset 分页（`sequence > ? ORDER BY sequence LIMIT ?`），不用 offset，也不会为这些字段载入整条日志。升级前把事件放在 `state_json` 里的旧轮次在事件表中没有行，读取回退到内存窗口，行为与升级前一致。
 - 首次通过取消接口取消运行时记录一次 `run_cancelled` 事件，`source: user_request` 表示来自用户取消 API，并携带当时的 `activeTaskId` / `mediaTaskId`；此事件表示取消请求已接收，关联任务最终状态以任务查询及收尾状态为准。运行记录损坏或超限时优先保证取消和后台收尾，事件无法保存会记录服务端告警；旧导出日志不能据此追溯取消发起来源。
-- `GET /agent/runs/:id/events` 返回 `agent_event` 和首次 / 状态版本变化时的紧凑 `run_snapshot` SSE；无变化时只发送 heartbeat。事件 `Seq` 在运行内递增；支持 `?after=` / `Last-Event-ID`，游标不是运行 ID，服务端把它作为运行详情的 `sinceSeq`，因此断线重连只读该游标之后的增量。`cleanupPending: true` 时即使运行已进入终态也会继续推送，直到后台收尾完成。前端应以快照恢复状态，代理只对这一精确路径关闭缓冲。
+- `GET /agent/runs/:id/events` 返回 `agent_event` 和紧凑的 `run_snapshot`。首次连接默认从最近一窗开始。重连用 `?after=` 或 `Last-Event-ID` 传最后收到的事件序号，仍在零游标时传 `Last-Event-ID: 0` 即可从首条恢复。服务端按执行修订连续读取热表或归档，追平后发送快照，空闲时发送心跳。后台收尾期间继续发送带 `cleanupPending` 的快照，收尾完成并追平当前事件后才结束流。已核实的旧检查点前缀截断返回 HTTP 410 和 `details.earliestSeq`。事件页读取失败时可从最后收到的序号重连。
 - `generation_task_created` 携带 `canvasId`、`nodeId`、`taskId`、`title`、`mode`、`referenceNodeIds`。草稿、提交、画布工具写入，以及媒体成功 / 失败 / 取消的真实节点变更，均在画布写入与运行检查点的同一事务持久化 `canvas_updated`。节点已删除或换任务时不伪造更新；`run_failed` 本身不代表节点媒体任务失败。
 - 未注册 Agent 能力的节点不阻断整张画布读取：摘要和 `canvas_get_state` 仅返回基础信息，并标记 `agentSupported: false` 与原因；不暴露任意 metadata，不授予该类型的创建、修改、连线或媒体引用能力。
 - `approval.preview` 和 `canvas_updated.actions` 是服务端根据同一解析、快照与 Capability 规划流程生成的解释信息，不是授权凭证。审批卡片明确列出新增/修改节点、节点类型、修改字段、名称变化和连线两端；执行事件保存同样的可读信息，供历史消息显示和点击定位。实际写入仍重新校验用户归属、`snapshotHash`、Capability、节点锁、预算和审批 `callHash`。
@@ -1062,7 +1072,7 @@ Agent 已不再注入、召回或写入下列经验条目，记忆设置页只�
 | 504 | 504 | `timeout` | 超时 |
 | 40301 | 403 | `quota_exceeded` | 账号配额用尽（不自动重试） |
 | 40301 | 403 | `storage_capacity_exceeded` | 账号文件容量不足，上传或媒体生成被拒；前端据此展示“购买空间”入口 |
-| 40301 | 403 | `agent_history_capacity_exceeded` | Agent 历史容量不足；联系管理员调高独立额度或清理历史，不展示文件扩容入口 |
+| 40301 | 403 | `agent_history_capacity_exceeded` | Agent 热历史容量不足（账号额度或平台热池）；清理历史或联系管理员调整 Agent 独立额度，不展示文件扩容入口 |
 | 40302 | 403 | `storage_read_only` | 账号超出文件容量且 7 天宽限期已结束，内容写入被拒；`details` 含 `usedBytes`、`totalBytes`、`readOnlyAt` |
 | 40401 | 404 | `account_not_registered` | 一体表单密码登录时账号不存在且允许注册；`details.accountKind` 为 `username` / `email` |
 | 40901 | 409 | `conflict` | 幂等冲突 |

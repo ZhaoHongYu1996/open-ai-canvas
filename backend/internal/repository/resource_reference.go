@@ -69,17 +69,13 @@ func (r *Repository) AssetsResourceRecords(assetIDs []string) ([]model.AssetVers
 func (r *Repository) OtherAssetResourceReferences(userID string, excludedAssetIDs []string) (ResourceReferenceSnapshot, error) {
 	snapshot := ResourceReferenceSnapshot{}
 	var assets []model.Asset
-	query := r.db.Where("user_id = ?", userID)
-	if len(excludedAssetIDs) > 0 {
-		query = query.Where("id NOT IN ?", excludedAssetIDs)
-	}
-	if err := query.Find(&assets).Error; err != nil {
+	if err := r.db.Where("user_id = ? AND id NOT IN ?", userID, excludedAssetIDs).Find(&assets).Error; err != nil {
 		return snapshot, err
 	}
 	ids := make([]string, 0, len(assets))
 	for _, asset := range assets {
 		ids = append(ids, asset.ID)
-		snapshot.Documents = append(snapshot.Documents, ResourceReferenceDocument{Kind: "素材", ID: asset.ID, Title: asset.Title, PrimaryJSON: asset.PayloadJSON})
+		snapshot.Documents = append(snapshot.Documents, ResourceReferenceDocument{Kind: "素材", ID: asset.ID, PrimaryJSON: asset.PayloadJSON})
 	}
 	if len(ids) == 0 {
 		return snapshot, nil
@@ -207,12 +203,17 @@ func (r *Repository) ResourceReferenceSnapshotExcludingAssets(userID string, exc
 		}
 	}
 
-	otherAssets, err := r.OtherAssetResourceReferences(userID, excludingAssetIDs)
-	if err != nil {
+	var assets []model.Asset
+	assetQuery := r.db.Where("user_id = ?", userID)
+	if len(excludingAssetIDs) > 0 {
+		assetQuery = assetQuery.Where("id NOT IN ?", excludingAssetIDs)
+	}
+	if err := assetQuery.Find(&assets).Error; err != nil {
 		return snapshot, err
 	}
-	snapshot.Documents = append(snapshot.Documents, otherAssets.Documents...)
-	snapshot.Direct = append(snapshot.Direct, otherAssets.Direct...)
+	for _, asset := range assets {
+		snapshot.Documents = append(snapshot.Documents, ResourceReferenceDocument{Kind: "素材", ID: asset.ID, Title: asset.Title, PrimaryJSON: asset.PayloadJSON})
+	}
 
 	var canvases []model.CanvasProject
 	if err := r.db.Where("user_id = ?", userID).Find(&canvases).Error; err != nil {

@@ -7,7 +7,7 @@
 <p align="center">让一个故事，从文字走向银幕</p>
 
 <p align="center">
-  <a href="https://github.com/ZhaoHongYu1996/open-ai-canvas">GitHub</a> ·
+  <a href="https://github.com/ddcat-ai/open-ai-canvas">GitHub</a> ·
   <a href="docs/content/docs/overview/features.mdx">功能</a> ·
   <a href="docs/content/docs/overview/quick-start.mdx">文档</a> ·
   <a href="SECURITY.md">安全策略</a>
@@ -166,7 +166,7 @@
 ### 宿主机启动
 
 ```bash
-git clone -b Dev https://github.com/ZhaoHongYu1996/open-ai-canvas.git
+git clone https://github.com/ddcat-ai/open-ai-canvas.git
 cd open-ai-canvas
 
 # 使用 Git 忽略的目录保存本地开发数据和缓存
@@ -232,40 +232,6 @@ docker compose -f docker-compose.local.yml up -d --build
 ```
 
 前端业务 API 统一经 `web/src/services/api/request.ts` 调用。生产环境由 Nginx 托管前端并代理后端，公网只需暴露 web 入口；SSE 仅在明确的流式路径关闭代理缓冲。
-
-## 服务器部署
-
-### 官方 Release 镜像（推荐，支持后台在线更新）
-
-适用于使用 systemd 的 Linux 服务器。先从 [GitHub Releases](https://github.com/ddcat-ai/open-ai-canvas/releases) 选择包含镜像、Host Updater 二进制和 `SHA256SUMS` 的已发布版本，将下方 `vX.Y.Z` 替换为该版本：
-
-```bash
-CANVAS_RELEASE=vX.Y.Z
-curl -fsSL "https://raw.githubusercontent.com/ddcat-ai/open-ai-canvas/${CANVAS_RELEASE}/scripts/install-server-image.sh" \
-  | sudo env CANVAS_IMAGE_TAG="${CANVAS_RELEASE}" REPOSITORY_REF="${CANVAS_RELEASE}" bash
-```
-
-脚本使用 `docker-compose.deploy.yml`，启动 PostgreSQL、Redis、独立 `yingce-agent`、backend 和 web，由一次性 `migrate` 服务迁移数据库，并安装宿主机 Host Updater。backend、web、Agent 镜像会固定为对应 GHCR digest。默认访问 `http://服务器IP:3000`，安装完成后在“系统配置 → 系统更新”检查后续版本。
-
-查看状态和日志：
-
-```bash
-cd /opt/open-ai-canvas
-sudo docker compose --env-file .env -f docker-compose.deploy.yml ps
-sudo docker compose --env-file .env -f docker-compose.deploy.yml logs -f --tail=200
-```
-
-### 源码构建与已有部署
-
-需要运行自行修改的源码时，可以使用源码安装脚本：
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/ZhaoHongYu1996/open-ai-canvas/Dev/scripts/install-server.sh | sudo bash
-```
-
-脚本使用 PostgreSQL、Redis、独立 Agent 和源码构建叠加层，但不安装 Host Updater；该部署不属于后台在线更新管理范围，需自行构建、备份和升级。根目录的 `docker-compose.yml`、`docker-compose.local.yml` 和自行编写的两容器 SQLite 编排用于本地试运行，不作为默认服务器部署方案。
-
-已有 SQLite 或自定义 Compose 部署，不能只替换 Compose 文件或补装更新器就获得在线更新；应先核对原数据卷、完成备份和数据迁移。方案选择见 [Docker 部署](docs/content/docs/overview/docker.mdx)，更新约束、备份和回退见[系统更新文档](docs/content/docs/backend/system-update.mdx)。
 
 ## 安全边界
 

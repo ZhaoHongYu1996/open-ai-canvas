@@ -64,7 +64,6 @@ describe("workspace route loading", () => {
     test("keeps the creation page at root and preserves the create compatibility route", () => {
         const router = source("../src/router.tsx");
         const navigation = source("../src/components/layout/workspace-sidebar-nav.tsx");
-        const normalizedRouter = router.replace(/\s+/g, " ");
 
         expect(router).toContain('{ path: "/", element: deferred(<CreatePage />) }');
         expect(router).toContain('{ path: "/create", element: deferred(<CreatePage />) }');

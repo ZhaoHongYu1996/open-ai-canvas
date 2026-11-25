@@ -93,27 +93,6 @@ func TestVerifyZipBackupRejectsCorruption(t *testing.T) {
 	}
 }
 
-func TestImmutableImageRefsUseVersionTag(t *testing.T) {
-	got := immutableImageRefs("zhaohongyu1996/open-ai-canvas", "v1.5.7.1")
-	if got.backend != "ghcr.io/zhaohongyu1996/open-ai-canvas-backend:1.5.7.1" {
-		t.Fatalf("backend image = %q", got.backend)
-	}
-	if got.web != "ghcr.io/zhaohongyu1996/open-ai-canvas-web:1.5.7.1" {
-		t.Fatalf("web image = %q", got.web)
-	}
-}
-
-func TestNormalizeRepositoryLowercasesOwner(t *testing.T) {
-	got := normalizeRepository("ZhaoHongYu1996/open-ai-canvas")
-	want := "zhaohongyu1996/open-ai-canvas"
-	if got != want {
-		t.Fatalf("got %q, want %q", got, want)
-	}
-	if normalizeRepository("") != want {
-		t.Fatalf("empty repository default = %q", normalizeRepository(""))
-	}
-}
-
 func TestCurrentVersionRejectsLatest(t *testing.T) {
 	installDir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(installDir, ".env"), []byte("CANVAS_IMAGE_TAG=latest\n"), 0o600); err != nil {
@@ -225,22 +204,5 @@ func TestDeployComposeAgentVariablesFallbackForLegacyUpdater(t *testing.T) {
 		if !strings.Contains(compose, fallback) {
 			t.Errorf("docker-compose.deploy.yml is missing fallback %s…}", fallback)
 		}
-	}
-	if strings.Contains(compose, "ghcr.io/ddcat-ai/open-ai-canvas-yingce-agent") {
-		t.Fatal("docker-compose.deploy.yml must not fall back to the upstream Agent image")
-	}
-	if !strings.Contains(compose, "ghcr.io/zhaohongyu1996/open-ai-canvas-yingce-agent") {
-		t.Fatal("docker-compose.deploy.yml must fall back to the ZhaoHongYu1996 Agent image")
-	}
-}
-
-func TestComposeDownloadURLsPreferReleaseAsset(t *testing.T) {
-	got := composeDownloadURLs("ZhaoHongYu1996/open-ai-canvas", "v1.6.1.7", "docker-compose.deploy.yml")
-	want := []string{
-		"https://github.com/ZhaoHongYu1996/open-ai-canvas/releases/download/v1.6.1.7/docker-compose.deploy.yml",
-		"https://raw.githubusercontent.com/ZhaoHongYu1996/open-ai-canvas/v1.6.1.7/docker-compose.deploy.yml",
-	}
-	if strings.Join(got, "\n") != strings.Join(want, "\n") {
-		t.Fatalf("compose download URLs = %#v, want %#v", got, want)
 	}
 }

@@ -197,14 +197,7 @@ export async function recordCanvas(source: PrevisCaptureSource, duration: number
     try {
         surface.render(mode, 0);
         if (!surface.canvas.captureStream) throw new Error("当前浏览器不支持画面录制");
-        stream = surface.canvas.captureStream(0);
-        const videoTrack = stream.getVideoTracks()[0] as CanvasCaptureMediaStreamTrack | undefined;
-        let captureFrame = typeof videoTrack?.requestFrame === "function" ? () => videoTrack.requestFrame() : undefined;
-        if (!captureFrame) {
-            stream.getTracks().forEach((track) => track.stop());
-            stream = surface.canvas.captureStream(fps);
-            captureFrame = () => {};
-        }
+        stream = surface.canvas.captureStream(fps);
         const mimeType = ["video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/mp4", "video/webm"].find((type) => MediaRecorder.isTypeSupported(type));
         if (!mimeType) throw new Error("当前浏览器没有可用的视频编码器");
         recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 8_000_000 });
@@ -236,7 +229,6 @@ export async function recordCanvas(source: PrevisCaptureSource, duration: number
             options.signal?.addEventListener("abort", onAbort, { once: true });
             document.addEventListener("visibilitychange", onHidden);
             activeRecorder.start(250);
-            captureFrame();
             const start = performance.now();
             const tick = () => {
                 try {
@@ -246,7 +238,6 @@ export async function recordCanvas(source: PrevisCaptureSource, duration: number
                         return;
                     }
                     surface.render(mode, Math.floor(elapsed * fps) / fps);
-                    captureFrame();
                     timer = window.setTimeout(tick, 1000 / fps);
                 } catch (error) {
                     stop(error instanceof Error ? error : new Error("录制期间渲染失败"));

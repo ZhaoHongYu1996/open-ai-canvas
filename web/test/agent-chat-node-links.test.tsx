@@ -1,18 +1,7 @@
-import { afterAll, expect, test } from "bun:test";
-import { renderToStaticMarkup } from "react-dom/server.node";
-import { Window } from "happy-dom";
+import { expect, test } from "bun:test";
+import { renderToStaticMarkup } from "react-dom/server";
 import { AgentChatMessage, rewriteAgentNodeLinks, type CloudAgentChatMessage } from "@/components/canvas/canvas-cloud-agent-chat-ui";
 import { canvasThemes } from "@/lib/canvas-theme";
-
-const dom = new Window({ url: "http://localhost/" });
-const originalWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
-Object.defineProperty(globalThis, "window", { configurable: true, writable: true, value: dom });
-
-afterAll(() => {
-    if (originalWindow) Object.defineProperty(globalThis, "window", originalWindow);
-    else Reflect.deleteProperty(globalThis, "window");
-    dom.happyDOM.abort();
-});
 
 const videoReference = {
     id: "video-1790385749473-q4157",
@@ -58,7 +47,14 @@ test("leaves fenced code blocks untouched", () => {
 });
 
 test("renders an agent node link as a titled inline node card", () => {
-    const html = renderToStaticMarkup(<AgentChatMessage item={assistantMessage("新节点 ID：video-1790385749473-q4157")} theme={canvasThemes.dark} references={[videoReference]} onFocusNode={() => {}} />);
+    const html = renderToStaticMarkup(
+        <AgentChatMessage
+            item={assistantMessage("新节点 ID：video-1790385749473-q4157")}
+            theme={canvasThemes.dark}
+            references={[videoReference]}
+            onFocusNode={() => {}}
+        />,
+    );
     const visibleText = html.replace(/<[^>]+>/gu, "");
 
     expect(html).toContain('class="agent-message-node-link"');
@@ -71,7 +67,12 @@ test("renders an agent node link as a titled inline node card", () => {
 test("renders the image-to-previs user request with the existing canvas node card", () => {
     const imageReference = { ...videoReference, kind: "image" as const, sourceType: "image" as const, label: "道姑", title: "道姑" };
     const html = renderToStaticMarkup(
-        <AgentChatMessage item={{ id: "user-previs", role: "user", text: "根据此图生成世界引擎场景", canvasReferenceNodeId: imageReference.nodeId }} theme={canvasThemes.dark} references={[imageReference]} onFocusNode={() => {}} />,
+        <AgentChatMessage
+            item={{ id: "user-previs", role: "user", text: "根据此图生成世界引擎场景", canvasReferenceNodeId: imageReference.nodeId }}
+            theme={canvasThemes.dark}
+            references={[imageReference]}
+            onFocusNode={() => {}}
+        />,
     );
 
     expect(html).toContain('class="agent-message-node-link"');

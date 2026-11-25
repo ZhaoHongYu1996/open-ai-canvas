@@ -12,7 +12,7 @@ func TestBuiltinCatalogContainsRequestedProtocols(t *testing.T) {
 	registry := Builtins()
 	expected := []string{
 		"chat-completion", "openai-response", "claude-api",
-		"newapi", "newapi-channel-2", "xai-video", "volcengine-ark-video", "volcengine-jimeng-video", "gemini-veo", "novita-video", "minimax-video", "OpenAiBxinle", "agnes-video",
+		"newapi", "newapi-channel-2", "xai-video", "volcengine-ark-video", "volcengine-jimeng-video", "gemini-veo", "novita-video", "minimax-video", "agnes-video",
 	}
 	for _, id := range expected {
 		if _, ok := registry.Get(id); !ok {
@@ -28,7 +28,6 @@ func TestBuiltinCatalogContainsRequestedProtocols(t *testing.T) {
 		t.Fatal("legacy OpenAI video alias was not registered")
 	}
 	available := registry.List(SurfaceUserCustomChannel, CapabilityVideo, false)
-	var foundOpenAiBxinle bool
 	var agnesAvailable bool
 	for _, item := range available {
 		if item.ID == "agnes-video" {
@@ -37,12 +36,6 @@ func TestBuiltinCatalogContainsRequestedProtocols(t *testing.T) {
 				t.Fatalf("Agnes metadata must be enabled: %#v", item)
 			}
 		}
-		if item.ID == "OpenAiBxinle" {
-			foundOpenAiBxinle = true
-		}
-	}
-	if !foundOpenAiBxinle {
-		t.Fatal("OpenAiBxinle was omitted from the selectable video catalog")
 	}
 	if !agnesAvailable {
 		t.Fatal("Agnes adapter was not selectable")

@@ -250,7 +250,7 @@ func TestSourcesMirrorDigestsAndComposeEnvironment(t *testing.T) {
 	sources := Sources{"direct", "nju"}
 	images := sources.images(m.config.Repository, "v2.0.0")
 	for _, image := range []string{images.backend, images.web, images.agent} {
-		if !strings.HasPrefix(image, "ghcr.nju.edu.cn/"+m.config.Repository) || !strings.HasSuffix(image, ":2.0.0") {
+		if !strings.HasPrefix(image, "ghcr.nju.edu.cn/ddcat-ai/") || !strings.HasSuffix(image, ":2.0.0") {
 			t.Fatal(image)
 		}
 	}
@@ -294,39 +294,6 @@ func TestSourcesMirrorDigestsAndComposeEnvironment(t *testing.T) {
 	})
 	if _, err := m.verifyImages(images); err == nil {
 		t.Fatal("digest from wrong registry accepted")
-	}
-}
-
-func TestPrepareTargetComposePreservesReleasePriorityWithMirror(t *testing.T) {
-	for _, fallback := range []bool{false, true} {
-		t.Run(fmt.Sprintf("fallback=%v", fallback), func(t *testing.T) {
-			m := sourceManager(t)
-			var requested []string
-			m.httpClient.Transport = sourceTransport(func(r *http.Request) (*http.Response, error) {
-				requested = append(requested, r.URL.String())
-				if !strings.Contains(r.URL.String(), "gh-proxy.com/") {
-					t.Fatalf("mirror not applied: %s", r.URL)
-				}
-				if fallback && len(requested) == 1 {
-					return sourceResponse(404, "missing"), nil
-				}
-				return sourceResponse(200, "services: {}\n"), nil
-			})
-			path, err := m.prepareTargetCompose("v2.0.0", Sources{"gh_proxy", "ghcr"})
-			if err != nil {
-				t.Fatal(err)
-			}
-			data, err := os.ReadFile(path)
-			if err != nil || string(data) != "services: {}\n" {
-				t.Fatalf("compose=%q, err=%v", data, err)
-			}
-			if !strings.Contains(requested[0], "/releases/download/v2.0.0/") {
-				t.Fatal(requested)
-			}
-			if fallback && (len(requested) != 2 || !strings.Contains(requested[1], "raw.githubusercontent.com/")) {
-				t.Fatal(requested)
-			}
-		})
 	}
 }
 

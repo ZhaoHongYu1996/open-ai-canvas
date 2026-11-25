@@ -6,7 +6,6 @@ import { App } from "antd";
 import { buildNodeGenerationContext, hydrateNodeGenerationContext } from "@/components/canvas/canvas-node-generation";
 import type { CanvasNodeGenerationMode } from "@/components/canvas/canvas-node-prompt-panel";
 import { buildGenerationConfig, isGenerationCanceled } from "@/lib/canvas/canvas-project-generation";
-import { generationTaskCanReloadResource } from "@/lib/canvas/canvas-generation-task-sync";
 import { canvasReferenceImageDimensions } from "@/lib/canvas/canvas-reference-image-size";
 import { canvasGenerationPromptMetadata, canvasGenerationRequestFingerprint, runCanvasGenerationSubmissionOnce } from "@/lib/canvas/canvas-generation-submission";
 import { canvasVideoOperation } from "@/lib/canvas/canvas-video-reference-mode";
@@ -364,7 +363,6 @@ export function useCanvasGenerationExecutor({
                         );
 
                     let pendingNodeIds: string[] = [];
-                    const boundTasks = new Map<string, GenerationTask>();
                     const execution = {
                         projectId,
                         nodeId,
@@ -389,7 +387,6 @@ export function useCanvasGenerationExecutor({
                         startGenerationRequest,
                         finishGenerationRequest,
                         bindGenerationTask: (targetNodeId: string, task: GenerationTask) => {
-                            boundTasks.set(targetNodeId, task);
                             bindGenerationTask(targetNodeId, task);
                             setNodes((current) => {
                                 const source = current.find((node) => node.id === nodeId);
@@ -412,16 +409,7 @@ export function useCanvasGenerationExecutor({
                         else await executeTextGeneration(execution);
                     } catch (error) {
                         if (isGenerationCanceled(error)) return;
-                        const completedOutputTask = [...new Set([nodeId, ...pendingNodeIds])]
-                            .map((targetNodeId) => boundTasks.get(targetNodeId))
-                            .find((task) => task && generationTaskCanReloadResource(task));
-                        const failure = completedOutputTask
-                            ? {
-                                  errorDetails: completedOutputTask.type === "canvas_video"
-                                      ? "视频已生成，但画布未能加载结果。请点击“重新加载资源”恢复。"
-                                      : "作品已生成，但画布未能加载结果。请点击“重新加载资源”恢复。",
-                              }
-                            : generationFailureMetadata(error, prompt);
+                        const failure = generationFailureMetadata(error, prompt);
                         if (options?.waitForTaskCapacity && isGenerationTaskCapacityError(error)) {
                             setNodes((current) =>
                                 current.map((node) => {
@@ -443,20 +431,7 @@ export function useCanvasGenerationExecutor({
                         }
                         message.error(failure.errorDetails);
                         setNodes((current) =>
-                            current.map((node) => {
-                                if (node.id !== nodeId && !pendingNodeIds.includes(node.id)) return node;
-                                if (node.id === nodeId && !markSourceStatus && node.metadata?.taskId !== completedOutputTask?.id) return node;
-                                const writebackFailed = node.metadata?.taskId === completedOutputTask?.id;
-                                return {
-                                    ...node,
-                                    metadata: {
-                                        ...node.metadata,
-                                        status: NODE_STATUS_ERROR,
-                                        ...failure,
-                                        ...(writebackFailed ? { resourceReloadAvailable: true } : {}),
-                                    },
-                                };
-                            }),
+                            current.map((node) => (node.id === nodeId || pendingNodeIds.includes(node.id) ? (node.id === nodeId && !markSourceStatus ? node : { ...node, metadata: { ...node.metadata, status: NODE_STATUS_ERROR, ...failure } }) : node)),
                         );
                     } finally {
                         finishGenerationRequest(nodeId, controller);

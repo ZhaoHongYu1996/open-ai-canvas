@@ -150,22 +150,9 @@ async function launchChrome(chromePath, cdpPort, profileDir) {
  * 只放行 ALLOWED_NOISE 精确匹配，其他异常/console error/网络失败全部记入 problems。
  */
 async function connectCdp(cdpPort) {
-    const deadline = Date.now() + 10000;
-    let target = null;
-    let lastError = null;
-    while (Date.now() < deadline && !target) {
-        try {
-            const response = await fetch(`http://127.0.0.1:${cdpPort}/json/list`);
-            if (!response.ok) throw new Error(`CDP target list returned HTTP ${response.status}`);
-            const list = await response.json();
-            target = list.find((item) => item.type === "page") || null;
-            if (!target) lastError = new Error("No page target is available yet");
-        } catch (error) {
-            lastError = error;
-        }
-        if (!target) await sleep(200);
-    }
-    if (!target) throw new Error(`No CDP page target found before timeout: ${lastError?.message || "unknown error"}`);
+    const list = await (await fetch(`http://127.0.0.1:${cdpPort}/json/list`)).json();
+    const target = list.find((t) => t.type === "page");
+    if (!target) throw new Error("No CDP page target found");
 
     const ws = new WebSocket(target.webSocketDebuggerUrl);
     await new Promise((resolve, reject) => {
@@ -808,7 +795,7 @@ async function saveFailureCloseGuard(cdp, baseUrl) {
             delete window.__previsStayClickProbe;
         })()`);
     }
-    let modalGone = await cdp.poll(
+    const modalGone = await cdp.poll(
         `![...document.querySelectorAll('.ant-modal-confirm')].some((modal) => {
             const rect = modal.getBoundingClientRect();
             const style = getComputedStyle(modal);
@@ -817,28 +804,7 @@ async function saveFailureCloseGuard(cdp, baseUrl) {
         "modal dismissed",
         20000,
     );
-    if (!modalGone) {
-        // AntD's confirm portal can retain a stale action node during a slow
-        // compositor frame. Retry the same scoped user action once rather than
-        // turning the E2E into a timing-only failure.
-        const retried = await cdp.clickText("留在世界引擎", ".ant-modal-confirm button");
-        if (retried) {
-            modalGone = await cdp.poll(
-                `![...document.querySelectorAll('.ant-modal-confirm')].some((modal) => {
-                    const rect = modal.getBoundingClientRect();
-                    const style = getComputedStyle(modal);
-                    return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden' && Number(style.opacity) > 0;
-                })`,
-                "modal dismissed after retry",
-                10000,
-            );
-        }
-    }
-    const modalState = await cdp.evaluate(`(() => [...document.querySelectorAll('.ant-modal-confirm')].map((modal) => ({
-        text: (modal.textContent || '').trim(),
-        visible: (() => { const rect = modal.getBoundingClientRect(); const style = getComputedStyle(modal); return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden' && Number(style.opacity) > 0; })(),
-    })))()`);
-    assert(modalGone, "F6 confirm dialog dismissed after choosing 留在世界引擎", JSON.stringify(modalState));
+    assert(modalGone, "F6 confirm dialog dismissed after choosing 留在世界引擎");
 
     await sleep(1000);
     const stillOpen = await cdp.evaluate(`document.querySelectorAll('.previs-viewport-shell').length`);
@@ -920,7 +886,7 @@ async function shotOutputs(cdp, baseUrl) {
     assert(result.maxColorError <= 2, "G5 beauty matches default framebuffer tone mapping", `max error=${result.maxColorError}`);
     const recording = await cdp.evaluate(`(async () => {
         const handle=window.__previsCaptureTest.handle;
-        const blob=await handle.recordVideo(2,12,'depth',{longEdge:320});
+        const blob=await handle.recordVideo(.6,12,'depth',{longEdge:320});
         const video=document.createElement('video'),url=URL.createObjectURL(blob);video.muted=true;
         try { await new Promise((resolve,reject)=>{video.onloadeddata=resolve;video.onerror=()=>reject(new Error('recording cannot decode'));video.src=url;});
             const abort=new AbortController();const pending=handle.recordVideo(2,12,'beauty',{longEdge:320,signal:abort.signal});abort.abort();
@@ -1017,16 +983,6 @@ async function main() {
 
     if (failures > 0) {
         console.error(`\nPrevis P0 Chrome E2E FAILED (${failures} assertion(s)).`);
-        const diagnostic = results
-            .filter((result) => !result.ok)
-            .map((result) => `${result.name}${result.detail ? ` — ${result.detail}` : ""}`)
-            .join(" | ")
-            .replace(/[\r\n]+/g, " ")
-            .slice(0, 60000);
-        // GitHub Actions hides the step log from anonymous API callers. Emit the
-        // already-collected assertion details as a bounded annotation so a failed
-        // quality run remains diagnosable without weakening any assertion.
-        console.log(`::error title=Previs P0 Chrome E2E failure::${diagnostic}`);
         process.exit(1);
     }
     console.log("\nPrevis P0 Chrome E2E PASSED.");

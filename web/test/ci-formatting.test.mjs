@@ -96,40 +96,6 @@ describe("changed-file formatting gate", () => {
         await expect(repo.check({ baseSha: "0".repeat(40) })).rejects.toThrow("new.ts");
     });
 
-    test("a zero-before merge checks first-parent changes except main-identical files", async () => {
-        const repo = fixture({
-            "dev-feature.ts": 'export const feature = "base";\n',
-            "merge-resolution.ts": 'export const value = "base";\n',
-        });
-        const base = repo.baseSha;
-        repo.git("branch", "-M", "dev");
-        repo.git("checkout", "-b", "main-side", base);
-        repo.write("dev-feature.ts", 'export const feature = "main";\n');
-        repo.write("merge-resolution.ts", 'export const value = "main";\n');
-        repo.write("main-only.ts", "const main=1;\n");
-        repo.commit();
-        repo.git("checkout", "dev");
-        repo.write("dev-feature.ts", 'export const feature = "dev";\n');
-        repo.write("merge-resolution.ts", 'export const value = "dev";\n');
-        repo.commit();
-        const merge = spawnSync("git", ["merge", "--no-ff", "--no-commit", "main-side"], { cwd: repo.cwd, encoding: "utf8" });
-        expect(merge.status).not.toBe(0);
-        repo.write("dev-feature.ts", "export const feature='dev-main';\n");
-        repo.write("merge-resolution.ts", "export const value='merged';\n");
-        repo.git("add", ".");
-        repo.git("-c", "commit.gpgsign=false", "commit", "-qm", "merge main into dev");
-
-        let failure;
-        try {
-            await repo.check({ baseSha: "0".repeat(40) });
-        } catch (error) {
-            failure = error;
-        }
-        expect(failure?.message).toContain("dev-feature.ts");
-        expect(failure?.message).toContain("merge-resolution.ts");
-        expect(failure?.message).not.toContain("main-only.ts");
-    });
-
     test("deletions do not attempt to read missing files", async () => {
         const repo = fixture({ "deleted.ts": "const value = 1;\n" });
         repo.git("rm", "web/deleted.ts");

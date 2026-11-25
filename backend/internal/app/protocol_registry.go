@@ -3,7 +3,6 @@ package app
 import (
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -171,7 +170,10 @@ func selectModelRelease(registry *protocol.Registry, id, digest string, chooseCu
 		if !release.Selectable {
 			continue
 		}
-		if release.SHA256 == digest || digest == "" && release.Current && (chooseCurrent || len(releases) == 1) {
+		// An empty digest means the model follows the instance's current
+		// selectable release. A non-empty digest remains an explicit pin to
+		// that package, including an archived release.
+		if release.SHA256 == digest || digest == "" && release.Current {
 			return release, nil
 		}
 	}
@@ -271,13 +273,13 @@ func (s *Service) InstallPluginForAdmin(actor *model.User, data []byte, fileName
 	}
 	parsed, err := protocol.ParsePluginPackage(data)
 	if err != nil {
-		return PluginView{}, WrapAppError(http.StatusBadRequest, "插件包校验失败："+err.Error(), err)
+		return PluginView{}, err
 	}
 	if _, reserved := officialApplicationPolicies[parsed.Manifest.Metadata.ID]; reserved {
-		return PluginView{}, NewAppError(http.StatusConflict, fmt.Sprintf("插件 ID %q 由官方应用保留", parsed.Manifest.Metadata.ID))
+		return PluginView{}, fmt.Errorf("插件 ID %q 由官方应用保留", parsed.Manifest.Metadata.ID)
 	}
 	if _, reserved := systemPaymentPolicies[parsed.Manifest.Metadata.ID]; reserved && !isPaymentPluginManifest(parsed.Manifest) {
-		return PluginView{}, NewAppError(http.StatusConflict, fmt.Sprintf("插件 ID %q 由系统支付插件保留", parsed.Manifest.Metadata.ID))
+		return PluginView{}, fmt.Errorf("插件 ID %q 由系统支付插件保留", parsed.Manifest.Metadata.ID)
 	}
 	plugin, err := s.InstallPlugin(data, fileName)
 	if err != nil {

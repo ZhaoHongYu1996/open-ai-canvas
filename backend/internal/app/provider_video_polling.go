@@ -252,14 +252,6 @@ func isTransientTransportError(err error) bool {
 			return true
 		}
 	}
-	// Windows surfaces a peer reset as WSAECONNRESET text rather than matching
-	// syscall.ECONNRESET through the wrapped net.OpError on some Go versions.
-	message := strings.ToLower(err.Error())
-	for _, marker := range []string{"connection reset by peer", "forcibly closed by the remote host", "connection aborted", "broken pipe", "unexpected eof"} {
-		if strings.Contains(message, marker) {
-			return true
-		}
-	}
 	return false
 }
 
