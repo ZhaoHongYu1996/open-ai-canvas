@@ -292,6 +292,8 @@ export const CanvasNode = React.memo(function CanvasNode({
                 ref={shellRef}
                 className="canvas-node-shell relative h-full w-full overflow-visible rounded-[var(--node-radius)]"
                 data-node-state={nodeState}
+                data-node-selected={isSelected ? "true" : undefined}
+                data-node-selection-motion={disableMediaEffects ? "off" : "on"}
                 data-generation-reveal={generationRevealing ? "true" : undefined}
                 data-connection-tilt={connectionTilt ? "true" : undefined}
                 data-state={data.metadata?.status || (isActive ? "active" : isRelated ? "related" : "idle")}
@@ -301,6 +303,7 @@ export const CanvasNode = React.memo(function CanvasNode({
                         // 固定占位但不绘制描边，避免聚焦切换时边框宽度变化造成白边跳动。
                         border: isComposerNode ? "0" : "1px solid transparent",
                         boxShadow: isComposerNode || !showChrome ? "none" : isSelected || isFocusRelated ? theme.node.hoverShadow : theme.node.shadow,
+                        "--node-selection-glow": theme.node.activeStroke,
                         outline: !showChrome && isActive ? `1px solid ${theme.node.activeStroke}` : undefined,
                     } as React.CSSProperties
                 }
