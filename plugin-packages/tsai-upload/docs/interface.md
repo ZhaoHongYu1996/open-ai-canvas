@@ -7,13 +7,13 @@
 - 插件 ID：`tsai-upload`。
 - Provider：`tsai-upload-chat`（对话）、`tsai-upload-minimax-h3`（MiniMax H3 视频）、`tsai-upload-seedance-mini`（Seedance 与 Wan 视频）、`tsai-upload-seedream`（图片）、`tsai-upload-seed-audio`（Seed Audio）。
 - Base URL：`https://api.alifenqi.com:8188`；不要重复填写 `/v1`。鉴权由渠道密钥配置提供 `Authorization: Bearer <apiKey>`。Manifest、URL、日志和任务正文不保存 API Key。
-- 文档来源：[TSAI API 文档](https://api.alifenqi.com:8188/app/#docs)。版本 `1.3.0`。
+- 文档来源：[TSAI API 文档](https://api.alifenqi.com:8188/app/#docs)。版本 `1.3.1`。
 
 ## 相比 1.1.3 的接口变化
 
 1. MiniMax H3 从旧的首帧/尾帧、`image_urls`/`video_urls`/`audio_urls` 改为统一 `conditions[]`；比例字段从 `aspect_ratio` 改为 `ratio`。H3 分辨率按文档转为大写（`480P`、`768P`、`1080P`、`2K`）；`generate_audio` 仅在 true 时发送。
 2. Seedance Provider 覆盖 Seedance 2.0、2.0 Fast、2.0 mini 和 Wan 3.0，继续使用 `conditions[]`；Seedance/Wan 分辨率保留文档要求的小写（如 `480p`），不会转换成 `480P`。增加运镜、输出数量、水印和种子字段；显式 false 会保留。
-3. 图片 Provider 新增 GPT Image 2、Banana 2.1，并更新 Seedream 4.5 请求体：用独立的 `resolution`、`ratio`、`n`；删除旧的 `size` 像素推导、`sequential_image_generation`、`response_format` 和 `stream` 字段。
+3. 图片 Provider 新增 GPT Image 2、Banana 2.1，并更新 Seedream 4.5 请求体：将宿主的标准像素尺寸转换为独立的 `resolution`、`ratio`，保留 `n`；上游请求不发送 `size`、`sequential_image_generation`、`response_format` 和 `stream` 字段。
 4. 视频创建只使用平台任务 ID `data[0].task_id` 轮询；成功状态从 `data.status` 读取，结果从 `data.result.videos` 读取。
 5. 增加 Seed Audio 请求 Provider，映射文本、语速档位、最多 3 条参考音频或 1 张参考图片；参考音频和参考图片互斥。
 
@@ -48,7 +48,7 @@
 
 ### 图片
 
-- 请求字段为 `model`、`prompt`、`resolution`（`1k`/`2k`/`4k`，小写）、`ratio`、`n`、可选参考图 `image` 和 `watermark`。模型所支持的比例并不完全相同；以相应模型文档为准。
+- 请求字段为 `model`、`prompt`、`resolution`（`1k`/`2k`/`4k`，小写）、`ratio`、`n`、可选参考图 `image` 和 `watermark`。宿主传入标准像素尺寸时，插件按该尺寸换算比例和档位，例如 `1024x1024` 转为 `1:1` 与 `1k`；只传比例时默认 `2k`。不支持的尺寸在提交前报错，上游请求不带 `size`。模型所支持的比例并不完全相同；以相应模型文档为准。
 - 单张参考图发送 URL 字符串，多张发送字符串数组。素材 URL 由宿主转换为短期公网可下载地址。
 - 同步成功响应使用 `data[].url`。长任务可能返回 HTTP 202 和 `id/status`，再请求 `GET /v1/images/generations/{task_id}`；不会重复提交。
 
@@ -79,7 +79,7 @@
   "apiVersion": "yingce.plugin/v1",
   "id": "tsai-upload",
   "name": "TSAI 网关（上传版）",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "author": "TSAI / 影策",
   "description": "TSAI 对话、Seedance 2.0 系列与 Wan 3.0 视频、MiniMax H3、GPT Image 2 / Banana 2.1 / Seedream 4.5 图片和 Seed Audio 音频的声明式系统协议。",
   "enabled": true,
@@ -1602,6 +1602,150 @@
               ]
             },
             "message": "TSAI Seedream 的 prompt 最多 20000 个字符"
+          },
+          {
+            "assert": {
+              "$in": [
+                {
+                  "$lower": {
+                    "$trim": {
+                      "$ref": "request.aspectRatio"
+                    }
+                  }
+                },
+                [
+                  "",
+                  "auto",
+                  "1:1",
+                  "16:9",
+                  "9:16",
+                  "4:3",
+                  "3:4",
+                  "1k",
+                  "2k",
+                  "4k",
+                  "1024x1024",
+                  "2048x2048",
+                  "2880x2880",
+                  "1824x1024",
+                  "2752x1536",
+                  "3840x2160",
+                  "2560x1440",
+                  "1024x1824",
+                  "1536x2752",
+                  "2160x3840",
+                  "1440x2560",
+                  "1360x1024",
+                  "2304x1728",
+                  "3264x2448",
+                  "1024x1360",
+                  "1728x2304",
+                  "2448x3264"
+                ]
+              ]
+            },
+            "message": "TSAI 图片尺寸无法转换为 ratio 和 resolution，请选择支持的画幅或像素档位"
+          },
+          {
+            "assert": {
+              "$or": [
+                {
+                  "$ne": [
+                    {
+                      "$ref": "request.model"
+                    },
+                    "gpt-image-2"
+                  ]
+                },
+                {
+                  "$not": {
+                    "$in": [
+                      {
+                        "$lower": {
+                          "$trim": {
+                            "$ref": "request.aspectRatio"
+                          }
+                        }
+                      },
+                      [
+                        "4:3",
+                        "3:4",
+                        "1360x1024",
+                        "2304x1728",
+                        "3264x2448",
+                        "1024x1360",
+                        "1728x2304",
+                        "2448x3264"
+                      ]
+                    ]
+                  }
+                }
+              ]
+            },
+            "message": "GPT Image 2 不支持 4:3 或 3:4 画幅"
+          },
+          {
+            "assert": {
+              "$or": [
+                {
+                  "$eq": [
+                    {
+                      "$ref": "request.model"
+                    },
+                    "gpt-image-2"
+                  ]
+                },
+                {
+                  "$ne": [
+                    {
+                      "$lower": {
+                        "$trim": {
+                          "$ref": "request.aspectRatio"
+                        }
+                      }
+                    },
+                    "auto"
+                  ]
+                }
+              ]
+            },
+            "message": "当前图片模型不支持 auto 画幅"
+          },
+          {
+            "assert": {
+              "$or": [
+                {
+                  "$ne": [
+                    {
+                      "$ref": "request.model"
+                    },
+                    "doubao-seedream-4-5-251128"
+                  ]
+                },
+                {
+                  "$not": {
+                    "$in": [
+                      {
+                        "$lower": {
+                          "$trim": {
+                            "$ref": "request.aspectRatio"
+                          }
+                        }
+                      },
+                      [
+                        "1k",
+                        "1024x1024",
+                        "1824x1024",
+                        "1024x1824",
+                        "1360x1024",
+                        "1024x1360"
+                      ]
+                    ]
+                  }
+                }
+              ]
+            },
+            "message": "Seedream 4.5 只支持 2k 或 4k 分辨率"
           }
         ],
         "create": {
@@ -1618,15 +1762,218 @@
                   "$ref": "request.prompt"
                 },
                 "resolution": {
-                  "$omitEmpty": {
-                    "$lower": {
-                      "$ref": "request.resolution"
-                    }
+                  "$switch": {
+                    "cases": [
+                      {
+                        "when": {
+                          "$in": [
+                            {
+                              "$lower": {
+                                "$trim": {
+                                  "$ref": "request.aspectRatio"
+                                }
+                              }
+                            },
+                            [
+                              "1k",
+                              "1024x1024",
+                              "1824x1024",
+                              "1024x1824",
+                              "1360x1024",
+                              "1024x1360"
+                            ]
+                          ]
+                        },
+                        "then": "1k"
+                      },
+                      {
+                        "when": {
+                          "$in": [
+                            {
+                              "$lower": {
+                                "$trim": {
+                                  "$ref": "request.aspectRatio"
+                                }
+                              }
+                            },
+                            [
+                              "2k",
+                              "2048x2048",
+                              "2752x1536",
+                              "1536x2752",
+                              "2304x1728",
+                              "1728x2304",
+                              "2560x1440",
+                              "1440x2560"
+                            ]
+                          ]
+                        },
+                        "then": "2k"
+                      },
+                      {
+                        "when": {
+                          "$in": [
+                            {
+                              "$lower": {
+                                "$trim": {
+                                  "$ref": "request.aspectRatio"
+                                }
+                              }
+                            },
+                            [
+                              "4k",
+                              "2880x2880",
+                              "3840x2160",
+                              "2160x3840",
+                              "3264x2448",
+                              "2448x3264"
+                            ]
+                          ]
+                        },
+                        "then": "4k"
+                      },
+                      {
+                        "when": {
+                          "$in": [
+                            {
+                              "$lower": {
+                                "$ref": "request.resolution"
+                              }
+                            },
+                            [
+                              "1k",
+                              "2k",
+                              "4k"
+                            ]
+                          ]
+                        },
+                        "then": {
+                          "$lower": {
+                            "$ref": "request.resolution"
+                          }
+                        }
+                      }
+                    ],
+                    "default": "2k"
                   }
                 },
                 "ratio": {
-                  "$omitEmpty": {
-                    "$ref": "request.aspectRatio"
+                  "$switch": {
+                    "cases": [
+                      {
+                        "when": {
+                          "$in": [
+                            {
+                              "$lower": {
+                                "$trim": {
+                                  "$ref": "request.aspectRatio"
+                                }
+                              }
+                            },
+                            [
+                              "1:1",
+                              "1k",
+                              "2k",
+                              "4k",
+                              "1024x1024",
+                              "2048x2048",
+                              "2880x2880"
+                            ]
+                          ]
+                        },
+                        "then": "1:1"
+                      },
+                      {
+                        "when": {
+                          "$in": [
+                            {
+                              "$lower": {
+                                "$trim": {
+                                  "$ref": "request.aspectRatio"
+                                }
+                              }
+                            },
+                            [
+                              "16:9",
+                              "1824x1024",
+                              "2752x1536",
+                              "3840x2160",
+                              "2560x1440"
+                            ]
+                          ]
+                        },
+                        "then": "16:9"
+                      },
+                      {
+                        "when": {
+                          "$in": [
+                            {
+                              "$lower": {
+                                "$trim": {
+                                  "$ref": "request.aspectRatio"
+                                }
+                              }
+                            },
+                            [
+                              "9:16",
+                              "1024x1824",
+                              "1536x2752",
+                              "2160x3840",
+                              "1440x2560"
+                            ]
+                          ]
+                        },
+                        "then": "9:16"
+                      },
+                      {
+                        "when": {
+                          "$in": [
+                            {
+                              "$lower": {
+                                "$trim": {
+                                  "$ref": "request.aspectRatio"
+                                }
+                              }
+                            },
+                            [
+                              "4:3",
+                              "1360x1024",
+                              "2304x1728",
+                              "3264x2448"
+                            ]
+                          ]
+                        },
+                        "then": "4:3"
+                      },
+                      {
+                        "when": {
+                          "$in": [
+                            {
+                              "$lower": {
+                                "$trim": {
+                                  "$ref": "request.aspectRatio"
+                                }
+                              }
+                            },
+                            [
+                              "3:4",
+                              "1024x1360",
+                              "1728x2304",
+                              "2448x3264"
+                            ]
+                          ]
+                        },
+                        "then": "3:4"
+                      }
+                    ],
+                    "default": {
+                      "$coalesce": [
+                        {
+                          "$ref": "request.aspectRatio"
+                        },
+                        "1:1"
+                      ]
+                    }
                   }
                 },
                 "n": {
@@ -1688,17 +2035,6 @@
                 "watermark": {
                   "$ref": "request.watermark"
                 }
-              },
-              {
-                "$coalesce": [
-                  {
-                    "$ref": "request.providerOptions.tsai-upload-seedream.body"
-                  },
-                  {
-                    "$ref": "request.providerOptions.tsai-upload-seedream.extra_body"
-                  },
-                  {}
-                ]
               }
             ]
           }

@@ -6,7 +6,7 @@
 
 当前协议以 [TSAI API 文档](https://api.alifenqi.com:8188/app/#docs) 为准。渠道 Base URL 填 `https://api.alifenqi.com:8188`，不要重复添加 `/v1`。API Key 只填写在渠道密钥配置，不放入 Manifest、URL 或任务正文。
 
-插件版本：`1.3.0`。当前覆盖 `/v1/models` 中的对话、视频、图片和音频模型：
+插件版本：`1.3.1`。当前覆盖 `/v1/models` 中的对话、视频、图片和音频模型：
 
 - 对话：`deepseek-v4-flash`、`deepseek-v4-pro`，使用 `/v1/chat/completions`。
 - 视频：`seedance-2.0`、`doubao-seedance-2-0-fast-260128`、`doubao-seedance-2-0-mini-260615`、`MiniMax/MiniMax-H3`、`custom/wan3.0-video`，使用 `/v1/videos/generations` 和 `/v1/videos/{task_id}`。
