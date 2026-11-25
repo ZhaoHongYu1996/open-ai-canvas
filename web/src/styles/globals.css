@@ -11725,19 +11725,32 @@
         pointer-events: none;
         background: var(--node-selection-glow);
         filter: drop-shadow(0 0 5px color-mix(in srgb, var(--node-selection-glow) 70%, transparent));
-        -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+        -webkit-mask:
+            linear-gradient(#000 0 0) content-box,
+            linear-gradient(#000 0 0);
         -webkit-mask-composite: xor;
-        mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+        mask:
+            linear-gradient(#000 0 0) content-box,
+            linear-gradient(#000 0 0);
         mask-composite: exclude;
     }
 
     .canvas-node-shell[data-node-selected="true"][data-node-selection-motion="on"]::before {
-        background: conic-gradient(from var(--node-selection-glow-angle), transparent 0deg 185deg, color-mix(in srgb, var(--node-selection-glow) 30%, transparent) 220deg, var(--node-selection-glow) 285deg 315deg, color-mix(in srgb, var(--node-selection-glow) 30%, transparent) 340deg, transparent 360deg);
+        background: conic-gradient(
+            from var(--node-selection-glow-angle),
+            transparent 0deg 185deg,
+            color-mix(in srgb, var(--node-selection-glow) 30%, transparent) 220deg,
+            var(--node-selection-glow) 285deg 315deg,
+            color-mix(in srgb, var(--node-selection-glow) 30%, transparent) 340deg,
+            transparent 360deg
+        );
         animation: canvas-node-selection-glow 3.6s linear infinite;
     }
 
     @keyframes canvas-node-selection-glow {
-        to { --node-selection-glow-angle: 360deg; }
+        to {
+            --node-selection-glow-angle: 360deg;
+        }
     }
 
     .no-motion .canvas-node-shell[data-node-selected="true"]::before {
