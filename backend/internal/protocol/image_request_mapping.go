@@ -30,6 +30,7 @@ func completeCommonImageRequest(spec RequestSpec, operation ManifestOperation, r
 	}
 	encoding := StandardImageSizeEncoding(spec.Path)
 	openAI, gemini := encoding == "pixels", encoding == "ratio"
+	pluginRatio := openAI && manifestDeclaresImageField(operation, "ratio") && manifestConsumesImageValue(operation, "request.aspectRatio", "request.imageParameters.size")
 	mapped := map[string]bool{}
 	set := func(target string, value any) bool {
 		if manifestDeclaresImageField(operation, target) {
@@ -60,7 +61,7 @@ func completeCommonImageRequest(spec RequestSpec, operation ManifestOperation, r
 	}
 	// A raw adapter call has no saved presets available for conversion. Reject
 	// mismatched shapes instead of sending them under a standard API field.
-	if openAI && strings.Contains(request.AspectRatio, ":") && !manifestDeclaresImageField(operation, "size") || gemini && strings.Contains(request.AspectRatio, "x") && !manifestDeclaresImageField(operation, "generationConfig.imageConfig.aspectRatio") {
+	if openAI && strings.Contains(request.AspectRatio, ":") && !pluginRatio && !manifestDeclaresImageField(operation, "size") || gemini && strings.Contains(request.AspectRatio, "x") && !manifestDeclaresImageField(operation, "generationConfig.imageConfig.aspectRatio") {
 		return RequestSpec{}, fmt.Errorf("图片参数 size 缺少目标接口的 %s 尺寸转换", encoding)
 	}
 	names := map[string]bool{}
@@ -76,9 +77,11 @@ func completeCommonImageRequest(spec RequestSpec, operation ManifestOperation, r
 			case "imageResolution":
 				// OpenAI expresses preset resolution through size; auto delegates it
 				// to the model rather than adding a separate resolution field.
-				mapped[name] = request.AspectRatio == "" || request.AspectRatio == "auto" || strings.Contains(request.AspectRatio, "x")
+				mapped[name] = request.AspectRatio == "" || request.AspectRatio == "auto" || strings.Contains(request.AspectRatio, "x") || pluginRatio && manifestDeclaresImageField(operation, "resolution") && manifestConsumesImageValue(operation, "request.resolution", "request.imageParameters.imageResolution")
 			case "size":
-				if request.AspectRatio != "" {
+				if pluginRatio {
+					mapped[name] = true
+				} else if request.AspectRatio != "" {
 					mapped[name] = set("size", request.AspectRatio)
 				}
 			case "quality":

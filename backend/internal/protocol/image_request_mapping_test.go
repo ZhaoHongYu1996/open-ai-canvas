@@ -32,6 +32,26 @@ func TestCommonImageFieldsReachStandardCreateWithoutDeclarations(t *testing.T) {
 	}
 }
 
+func TestCommonImageFieldsDoNotAddSizeWhenManifestDeclaresRatio(t *testing.T) {
+	a := mappingTestAdapter(ManifestOperation{Method: "POST", Path: "/v1/images/generations", ContentType: "application/json", Body: map[string]any{"$merge": []any{map[string]any{
+		"model":      map[string]any{"$ref": "request.model"},
+		"ratio":      map[string]any{"$ref": "request.aspectRatio"},
+		"resolution": map[string]any{"$ref": "request.resolution"},
+	}}}}, CapabilityImage)
+	r := GenerationRequest{Capability: CapabilityImage, Model: "gpt-image-2", AspectRatio: "1:1", Resolution: "1k", ImageParameters: map[string]any{"size": "1:1", "imageResolution": "1k"}}
+	spec, err := a.BuildCreate(context.Background(), RequestContext{Request: r})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := manifestTestBody(t, spec)
+	if body["ratio"] != "1:1" || body["resolution"] != "1k" {
+		t.Fatalf("plugin image fields: %#v", body)
+	}
+	if _, exists := body["size"]; exists {
+		t.Fatalf("host added size to plugin-defined image request: %#v", body)
+	}
+}
+
 func TestCommonImageFieldsGeminiAndUnknownMappingBoundaries(t *testing.T) {
 	a := mappingTestAdapter(ManifestOperation{Method: "POST", Path: "/v1beta/models/test:generateContent", ContentType: "application/json", Body: map[string]any{"contents": []any{}}}, CapabilityImage)
 	r := GenerationRequest{Capability: CapabilityImage, Model: "fixture", ImageParameters: map[string]any{"size": "16:9", "imageResolution": "4k", "count": 1}}
