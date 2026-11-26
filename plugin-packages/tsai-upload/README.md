@@ -1,5 +1,7 @@
 # TSAI 统一协议插件（上传版）
 
+手动上传包位于 `plugin-packages/uploadable/tsai-upload.yingce-plugin`。该包不放在 `plugin-packages/` 根目录，避免被当作内置官方插件自动注册。
+
 该 `.yingce-plugin` 使用独立插件 ID `tsai-upload`，Provider ID 均带 `tsai-upload-` 前缀，不会覆盖随应用自动注册的官方系统插件。上传安装后，在渠道配置中选择 Provider 并填写 TSAI API Key。
 
 包使用统一 `yingce.plugin/v1` Manifest 和宿主声明式运行时，不含 Web 入口代码，也不请求 `host:` 执行器。Base URL 填 `https://api.alifenqi.com:8188`，不要重复添加 `/v1`。API Key 只填写在渠道密钥配置中。
