@@ -1,6 +1,11 @@
 # CHANGELOG
 ## Unreleased
 
+## v1.8.7.3-rc.2
+- 图片协议：尊重插件显式声明的 ratio / resolution 映射，不再额外注入标准 size 字段，避免自定义图片接口参数冲突。
+- 插件包：新增独立 ID 的 TSAI 上传版插件 1.3.2，包含对话、图片、视频和音频协议配置及接口说明；Seed Audio 响应映射仍待真实任务验证。
+- 升级说明：数据库 Schema 仍为 110；同步更新 Web、Backend 和 yingce-agent，Host Updater 按现有备份和健康校验流程更新。
+
 ## v1.8.7.3-rc.1
 - 画布图片参数：模型独立声明分辨率和宽高比、但未保存尺寸预设时，图片节点支持组合选择分辨率与宽高比；选项取自模型实际声明，并保留原始请求值用于生成和报价。
 - 升级说明：数据库 Schema 仍为 110；同步更新 Web、Backend 和 yingce-agent，Host Updater 继续按备份、迁移校验和健康验证流程更新。
